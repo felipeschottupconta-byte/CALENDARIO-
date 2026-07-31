@@ -247,12 +247,7 @@ export default function App() {
   const emp = EMPRESAS[empId];
   const avisar = (m) => { setToast(m); setTimeout(() => setToast(null), 2200); };
 
-  const entrar = (cnpjDigitado) => {
-    const limpo = cnpjDigitado.replace(/\D/g, "");
-    const achada = Object.values(EMPRESAS).find((e) => e.cnpj.replace(/\D/g, "") === limpo);
-    setEmpId(achada ? achada.id : "gs");
-    setLogado(true);
-  };
+  const entrar = (id) => { setEmpId(id); setLogado(true); };
 
   return (
     <>
@@ -286,18 +281,31 @@ export default function App() {
 function Login({ onEntrar }) {
   const [manter, setManter] = useState(true);
   const [cnpj, setCnpj] = useState("52.276.638/0001-53");
+  const [erro, setErro] = useState(null);
+
+  const tentar = () => {
+    const limpo = cnpj.replace(/\D/g, "");
+    const texto = cnpj.trim().toLowerCase();
+    const achada = Object.values(EMPRESAS).find((e) =>
+      (limpo.length >= 8 && e.cnpj.replace(/\D/g, "") === limpo)
+      || (texto.length >= 3 && e.fantasia.toLowerCase().includes(texto)));
+    if (achada) { setErro(null); onEntrar(achada.id); }
+    else setErro('Não encontrei essa empresa. Ainda não temos e-mail cadastrado — use o CNPJ ou o nome, ex.: "D F Fernandes".');
+  };
+
   return (
     <div className="login">
       <div className="login-marca"><Marca tamanho={160} /></div>
       <div className="login-form">
-        <label className="campo"><span>CNPJ ou e-mail</span>
+        <label className="campo"><span>CNPJ ou nome da empresa</span>
           <input value={cnpj} onChange={(e) => setCnpj(e.target.value)} /></label>
         <label className="campo"><span>Senha</span><input type="password" defaultValue="••••••••" /></label>
         <button className="switch" onClick={() => setManter(!manter)} aria-pressed={manter}>
           <span className={"trilho" + (manter ? " on" : "")}><i /></span>
           Continuar conectado neste aparelho
         </button>
-        <button className="btn-primario" onClick={() => onEntrar(cnpj)}>Entrar</button>
+        <button className="btn-primario" onClick={tentar}>Entrar</button>
+        {erro && <p className="login-erro">{erro}</p>}
         <button className="btn-texto">Esqueci minha senha</button>
       </div>
       <p className="rodape">Nova Friburgo · RJ</p>
@@ -801,6 +809,7 @@ h2,h3,h4,h5{font-family:'Instrument Sans',sans-serif;letter-spacing:-.01em}
 .trilho{width:38px;height:22px;border-radius:11px;background:rgba(255,255,255,.2);position:relative;flex:none;transition:.2s}
 .trilho i{position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:#fff;transition:.2s}
 .trilho.on{background:#fff}.trilho.on i{left:19px;background:#000}
+.login-erro{font-size:12.5px;color:#FF9A8C;line-height:1.5;margin-top:-6px}
 .rodape{text-align:center;font-family:'Jost',sans-serif;font-size:11px;color:#7A7A76;letter-spacing:.2em}
 
 .btn-primario{background:var(--tinta);color:#fff;border:0;border-radius:13px;padding:15px;font:inherit;
