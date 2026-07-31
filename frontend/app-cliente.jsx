@@ -185,6 +185,8 @@ const DOCUMENTOS = [
   { id: "d3", nome: "Balancete — 05/2026", cat: "Contábil", data: "20/06/2026" },
 ];
 
+const EMAIL_ESCRITORIO = "felipeschottbraga@gmail.com";
+
 const TIPOS_PEDIDO = [
   { id: "cert", label: "Certidão negativa", prazo: "até 2 dias úteis" },
   { id: "fat", label: "Declaração de faturamento", prazo: "até 2 dias úteis" },
@@ -414,7 +416,7 @@ function Guias({ emp, avisar }) {
       </div>
       {vista === "guias" ? (
         emp.guias.length
-          ? emp.guias.map((g) => <CardGuia key={g.id} g={g} avisar={avisar} />)
+          ? emp.guias.map((g) => <CardGuia key={g.id} g={g} emp={emp} avisar={avisar} />)
           : <p className="vazio">Nenhuma guia publicada para este mês. Avisamos assim que houver.</p>
       ) : (
         <div className="pilha-fina">
@@ -430,7 +432,7 @@ function Guias({ emp, avisar }) {
   );
 }
 
-function CardGuia({ g, avisar }) {
+function CardGuia({ g, emp, avisar }) {
   const [aberto, setAberto] = useState(false);
   const [entenda, setEntenda] = useState(false);
   const [tribAberto, setTribAberto] = useState(null);
@@ -485,7 +487,7 @@ function CardGuia({ g, avisar }) {
       ) : (
         <button className="guia-acao" onClick={() => {
           setRecalculo(true);
-          avisar("Pedido enviado — a RN Contabilidade foi avisada por e-mail");
+          avisar("Recálculo de " + emp.fantasia + " enviado para " + EMAIL_ESCRITORIO);
         }}>Algo errado nesta guia? Pedir recálculo</button>
       )}
 
@@ -659,6 +661,7 @@ function Pedidos({ emp, pedidos, setPedidos, avisar }) {
     <div className="pilha">
       <button className="btn-texto" onClick={() => setNovo(false)}>‹ Voltar</button>
       <p className="fino">Pedido para <strong>{emp.fantasia}</strong></p>
+      <p className="fino">Vira um e-mail de {emp.fantasia} para a RN Contabilidade ({EMAIL_ESCRITORIO}).</p>
       <h3 className="secao">Do que você precisa?</h3>
       <div className="pilha-fina">
         {TIPOS_PEDIDO.map((t) => (
@@ -674,7 +677,8 @@ function Pedidos({ emp, pedidos, setPedidos, avisar }) {
       <button className="btn-primario largo" disabled={!tipo} onClick={() => {
         setPedidos([{ id: "p" + Date.now(), emp: emp.id, tipo: TIPOS_PEDIDO.find((t) => t.id === tipo).label,
           texto: texto || "—", etapas: [["Recebido", "05/07"], ["Em andamento", null], ["Concluído", null]] }, ...pedidos]);
-        setNovo(false); setTipo(null); setTexto(""); avisar("Pedido enviado à RN Contabilidade");
+        setNovo(false); setTipo(null); setTexto("");
+        avisar("Pedido de " + emp.fantasia + " enviado para " + EMAIL_ESCRITORIO);
       }}>Enviar pedido</button>
     </div>
   );
