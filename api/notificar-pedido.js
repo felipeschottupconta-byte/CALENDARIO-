@@ -1,22 +1,30 @@
 // api/notificar-pedido.js
 // ============================================================
-// Envia os avisos de pedido/recálculo por e-mail via Resend.
-// Troquei de Gmail SMTP pra cá porque login SMTP com senha de app
-// é frágil de configurar via variável de ambiente (espaço/quebra de
-// linha invisível já causou "BadCredentials" mais de uma vez aqui).
-// Resend só precisa de uma chave, sem usuário/senha.
+// Envia pelo Gmail via SMTP (nodemailer).
 //
-// Não precisa instalar nada — é uma chamada HTTP direta pra API da
-// Resend, sem SDK.
+// Requer: npm install nodemailer
+//
+// Esta function precisa rodar em Node.js, não em "edge" — o
+// nodemailer não funciona no runtime edge da Vercel.
 //
 // Configuração necessária (Vercel → Settings → Environment Variables):
-//   RESEND_API_KEY   chave gerada em resend.com (Dashboard → API Keys)
-//   EMAIL_DESTINO    e-mail do escritório que recebe os avisos
+//   GMAIL_USER            o e-mail do Gmail que vai enviar
+//   GMAIL_APP_PASSWORD    senha de app gerada nas configurações do Google
+//                         (NÃO é a senha normal da conta — ver instruções abaixo)
+//   EMAIL_DESTINO         e-mail do escritório que recebe os avisos
+//                         (pode ser o mesmo GMAIL_USER)
 //
-// Sem domínio próprio verificado na Resend, o remetente tem que ser
-// "onboarding@resend.dev" (domínio de testes deles, funciona de
-// primeira). Quando comprar um domínio, dá pra trocar o remetente.
+// Como gerar a senha de app no Google:
+//   1. myaccount.google.com/security
+//   2. Ativar verificação em duas etapas (obrigatório para senha de app)
+//   3. Buscar "Senhas de app" → gerar uma nova → copiar os 16 caracteres
+//   4. Colar em GMAIL_APP_PASSWORD (sem espaços)
+//
+// Limite do Gmail: ~500 e-mails/dia numa conta pessoal. Para o volume
+// de pedidos de 110 clientes, isso é folga de sobra.
 // ============================================================
+
+import nodemailer from "nodemailer";
 
 export const config = { runtime: "nodejs" };
 
@@ -65,28 +73,24 @@ Enviado automaticamente pelo Portal do Cliente RN Contabilidade.
   `.trim();
 
   try {
-    const r = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        from: "Portal RN Contabilidade <onboarding@resend.dev>",
-        to: [process.env.EMAIL_DESTINO],
-        subject: assunto,
-        text: texto,
-      }),
+    const usuario = (process.env.GMAIL_USER || "").trim();
+    const senha = (process.env.GMAIL_APP_PASSWORD || "").replace(/\s+/g, "");
+
+    const transporte = nodemailer.createTransport({
+      service: "gmail",
+      auth: { user: usuario, pass: senha },
     });
 
-    if (!r.ok) {
-      const corpo = await r.text();
-      throw new Error(`Resend respondeu ${r.status}: ${corpo}`);
-    }
+    await transporte.sendMail({
+      from: `"Portal RN Contabilidade" <${usuario}>`,
+      to: (process.env.EMAIL_DESTINO || "").trim(),
+      subject: assunto,
+      text: texto,
+    });
 
     return res.status(200).json({ ok: true });
   } catch (e) {
-    console.error("Erro ao enviar e-mail via Resend:", e);
+    console.error("Erro ao enviar e-mail via Gmail:", e);
     return res.status(500).json({ erro: "Falha ao enviar e-mail", detalhe: String(e) });
   }
 }
