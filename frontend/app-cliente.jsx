@@ -623,9 +623,8 @@ function Agenda({ emp }) {
                 + (selecionado === chaveD ? " sel" : "")}
               onClick={() => setSelecionado(selecionado === chaveD ? null : chaveD)}>
               <span className="cel-dia">{d}</span>
-              {valorDia > 0
-                ? <span className="cel-valor">{valorAbrev(valorDia)}</span>
-                : evs.length > 0 && <i className="pontos">{evs.slice(0, 3).map((e, j) => <b key={j} className={e.tipo} />)}</i>}
+              {valorDia > 0 && <span className="cel-valor">{valorAbrev(valorDia)}</span>}
+              {evs.length > 0 && <i className="pontos">{evs.slice(0, 3).map((e, j) => <b key={j} className={e.tipo} />)}</i>}
             </button>
           );
         })}
