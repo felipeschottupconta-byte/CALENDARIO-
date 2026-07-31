@@ -135,6 +135,48 @@ const EMPRESAS = {
     ],
     panorama: null,
   },
+  su: {
+    id: "su", razao: "Su Lingerie Ltda", fantasia: "Su Lingerie",
+    cnpj: "53.492.794/0001-14", regime: "Simples Nacional", situacao: "Ativa", contato: "Victor",
+    guias: [
+      {
+        id: "s1", tipo: "DAS", nome: "Simples Nacional", orgao: "Receita Federal",
+        comp: "06/2026", venc: "2026-07-20", valor: 3132.16, novo: true,
+        linha: "85800000031 3 32160328262 0 01072026196 9 17979207892 7",
+        entenda: {
+          anexo: "Anexo I — Comércio", rpa: 64989.55, rbt12: 370494.16,
+          faixaDe: 360000.01, faixaAte: 720000.00,
+          aliquotaNominal: 9.50, aliquotaEfetiva: 5.7590503450851,
+          tributos: [
+            { nome: "INSS/CPP", situacao: "Tributado", aliquota: 2.418801145, valor: 1571.97 },
+            { nome: "COFINS",   situacao: "Tributado", aliquota: 0.733703014, valor: 476.83 },
+            { nome: "ICMS",     situacao: "Redução",   aliquota: 1.929281866, valor: 643.21, reducao: 48.70 },
+            { nome: "IRPJ",     situacao: "Tributado", aliquota: 0.316747769, valor: 205.85 },
+            { nome: "CSLL",     situacao: "Tributado", aliquota: 0.201566762, valor: 131.00 },
+            { nome: "PIS",      situacao: "Tributado", aliquota: 0.158949790, valor: 103.30 },
+          ],
+          historico: [
+            { comp: "06/2025", receita: 15084.06 }, { comp: "07/2025", receita: 7057.59 },
+            { comp: "08/2025", receita: 7672.21 }, { comp: "09/2025", receita: 6449.24 },
+            { comp: "10/2025", receita: 8426.51 }, { comp: "11/2025", receita: 19541.41 },
+            { comp: "12/2025", receita: 23333.51 }, { comp: "01/2026", receita: 42913.63 },
+            { comp: "02/2026", receita: 46237.61 }, { comp: "03/2026", receita: 62588.41 },
+            { comp: "04/2026", receita: 60761.34 }, { comp: "05/2026", receita: 70428.64 },
+          ],
+          proximo: { comp: "07/2026", aliquotaEfetiva: 6.2031378950958 },
+        },
+      },
+      { id: "s2", tipo: "DARF", nome: "INSS — contribuinte individual", orgao: "Receita Federal",
+        comp: "06/2026", venc: "2026-07-20", valor: 178.31, novo: true,
+        linha: "85830000001 7 78310385262 7 01071626183 6 29402953083 1",
+        obs: "Contribuição descontada do sócio como contribuinte individual — 11% sobre o pró-labore." },
+    ],
+    agenda: [
+      { data: "2026-07-20", titulo: "DAS — Simples Nacional", nota: "R$ 3.132,16", tipo: "guia" },
+      { data: "2026-07-20", titulo: "INSS — contribuinte individual", nota: "R$ 178,31", tipo: "guia" },
+    ],
+    panorama: null,
+  },
 };
 
 const DOCUMENTOS = [
@@ -166,6 +208,9 @@ const prazo = (iso) => {
   return `Vence em ${n} dias`;
 };
 const MESES = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+const valorAbrev = (v) => v >= 1000
+  ? (v / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 }) + "k"
+  : v.toLocaleString("pt-BR", { maximumFractionDigits: 0 });
 
 function Barras({ seed }) {
   const bars = []; let h = 11;
@@ -220,7 +265,7 @@ function Login({ onEntrar }) {
   const [manter, setManter] = useState(true);
   return (
     <div className="login">
-      <div className="login-marca"><Marca tamanho={160} /><p>Sua empresa na palma da mão</p></div>
+      <div className="login-marca"><Marca tamanho={160} /></div>
       <div className="login-form">
         <label className="campo"><span>CNPJ ou e-mail</span><input defaultValue="52.276.638/0001-53" /></label>
         <label className="campo"><span>Senha</span><input type="password" defaultValue="••••••••" /></label>
@@ -253,12 +298,14 @@ function Topo({ aba, emp, onTrocar }) {
 }
 
 function Seletor({ atual, onEscolher, onFechar }) {
+  const dono = EMPRESAS[atual].contato;
+  const minhas = Object.values(EMPRESAS).filter((e) => e.contato === dono);
   return (
     <div className="modal" onClick={onFechar}>
       <div className="folha" onClick={(e) => e.stopPropagation()}>
         <h3 className="folha-titulo">Suas empresas</h3>
         <div className="pilha-fina">
-          {Object.values(EMPRESAS).map((e) => {
+          {minhas.map((e) => {
             const aberto = e.guias.reduce((s, g) => s + g.valor, 0);
             return (
               <button key={e.id} className={"emp" + (e.id === atual ? " on" : "")} onClick={() => onEscolher(e.id)}>
@@ -349,7 +396,7 @@ function Panorama({ p }) {
 
 function Linha({ e }) {
   return (
-    <div className="linha">
+    <div className={"linha linha-" + e.tipo}>
       <div className="bloco-data"><span className="dia">{e.data.slice(8)}</span><span className="mes">{MESES[+e.data.slice(5, 7) - 1]}</span></div>
       <div className="linha-corpo"><strong>{e.titulo}</strong><span>{e.nota}</span></div>
       <span className={"pino " + e.tipo} />
@@ -545,30 +592,60 @@ function Agenda({ emp }) {
   const inicio = new Date(ano, mes, 1).getDay();
   const qtd = new Date(ano, mes + 1, 0).getDate();
   const chave = (d) => `${ano}-07-${String(d).padStart(2, "0")}`;
+  const [selecionado, setSelecionado] = useState(null);
+
+  const totalMes = emp.guias.reduce((s, g) => s + g.valor, 0);
+  const proxima = [...emp.agenda].filter((e) => dias(e.data) >= 0).sort((a, b) => a.data.localeCompare(b.data))[0];
+  const eventos = selecionado ? emp.agenda.filter((e) => e.data === selecionado) : emp.agenda;
+
   return (
     <div className="pilha">
-      <div className="navmes"><strong>julho de 2026</strong></div>
+      <section className="destaque">
+        <p className="rotulo">Julho · a pagar no mês</p>
+        <p className="numero">{totalMes > 0 ? brl(totalMes) : "Nada em aberto"}</p>
+        <p className="nota">
+          {proxima ? `Próximo: ${proxima.titulo} · ${dataBR(proxima.data)}` : "Nenhum compromisso à frente"}
+        </p>
+      </section>
+
       <div className="calendario">
         {["D", "S", "T", "Q", "Q", "S", "S"].map((d, i) => <span className="cab" key={i}>{d}</span>)}
         {Array.from({ length: inicio }).map((_, i) => <span key={"v" + i} />)}
         {Array.from({ length: qtd }).map((_, i) => {
           const d = i + 1;
-          const evs = emp.agenda.filter((e) => e.data === chave(d));
+          const chaveD = chave(d);
+          const evs = emp.agenda.filter((e) => e.data === chaveD);
+          const valorDia = emp.guias.filter((g) => g.venc === chaveD).reduce((s, g) => s + g.valor, 0);
+          const tipoPrincipal = evs[0]?.tipo;
           return (
-            <span key={d} className={"cel" + (evs.length ? " tem" : "") + (d === 5 ? " hoje" : "")}>
-              {d}
-              {evs.length > 0 && <i className="pontos">{evs.slice(0, 3).map((e, j) => <b key={j} className={e.tipo} />)}</i>}
-            </span>
+            <button key={d} type="button" disabled={!evs.length}
+              className={"cel" + (evs.length ? " tem " + tipoPrincipal : "") + (d === 5 ? " hoje" : "")
+                + (selecionado === chaveD ? " sel" : "")}
+              onClick={() => setSelecionado(selecionado === chaveD ? null : chaveD)}>
+              <span className="cel-dia">{d}</span>
+              {valorDia > 0
+                ? <span className="cel-valor">{valorAbrev(valorDia)}</span>
+                : evs.length > 0 && <i className="pontos">{evs.slice(0, 3).map((e, j) => <b key={j} className={e.tipo} />)}</i>}
+            </button>
           );
         })}
       </div>
+
       <div className="legenda">
         <span><b className="guia" /> Guia a pagar</span>
         <span><b className="dp" /> Pessoal</span>
         <span><b className="obrigacao" /> Escritório</span>
         <span><b className="voce" /> Ação sua</span>
       </div>
-      <div className="pilha-fina">{emp.agenda.map((e, i) => <Linha e={e} key={i} />)}</div>
+
+      {selecionado && (
+        <button className="btn-texto" onClick={() => setSelecionado(null)}>‹ Ver agenda completa</button>
+      )}
+      <div className="pilha-fina">
+        {eventos.length
+          ? eventos.map((e, i) => <Linha e={e} key={i} />)
+          : <p className="vazio">Nenhum compromisso neste dia.</p>}
+      </div>
     </div>
   );
 }
@@ -688,7 +765,6 @@ h2,h3,h4,h5{font-family:'Instrument Sans',sans-serif;letter-spacing:-.01em}
 .login{flex:1;display:flex;flex-direction:column;justify-content:center;gap:34px;padding:32px 26px;
   background:#000;color:#F2F2F0;min-height:100vh}
 .login-marca{text-align:center;display:flex;flex-direction:column;align-items:center;gap:14px}
-.login-marca p{color:#9A9A96;font-size:13.5px;font-family:'Jost',sans-serif;letter-spacing:.05em}
 .login-form{display:flex;flex-direction:column;gap:14px}
 .campo{display:flex;flex-direction:column;gap:6px}
 .campo span{font-family:'Jost',sans-serif;font-size:11px;letter-spacing:.14em;text-transform:lowercase;opacity:.7}
@@ -752,7 +828,12 @@ h2,h3,h4,h5{font-family:'Instrument Sans',sans-serif;letter-spacing:-.01em}
 .pan-alerta{font-size:12.5px;color:#8A6516;background:#FBF4E6;border-radius:10px;padding:11px 13px;line-height:1.55}
 .pan-escopo{font-size:11.5px;color:var(--suave);line-height:1.5}
 
-.linha{background:#fff;border:1px solid var(--linha);border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:13px}
+.linha{background:#fff;border:1px solid var(--linha);border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:13px;
+  border-left:3px solid var(--linha)}
+.linha-guia{border-left-color:var(--tinta)}
+.linha-dp{border-left-color:var(--ambar)}
+.linha-obrigacao{border-left-color:#9A9A96}
+.linha-voce{border-left-color:var(--rubro)}
 .bloco-data{display:flex;flex-direction:column;align-items:center;min-width:32px}
 .bloco-data .dia{font-family:'Bodoni Moda',serif;font-size:20px;font-weight:600;line-height:1}
 .bloco-data .mes{font-family:'Jost',sans-serif;font-size:9.5px;letter-spacing:.14em;color:var(--suave)}
@@ -817,15 +898,23 @@ h2,h3,h4,h5{font-family:'Instrument Sans',sans-serif;letter-spacing:-.01em}
 .doc span{font-size:12px;color:var(--suave)}
 .baixar{font-size:17px;flex:none}
 
-.navmes{background:#fff;border:1px solid var(--linha);border-radius:12px;padding:11px 14px;text-align:center}
-.navmes strong{font-family:'Bodoni Moda',serif;font-size:17px;font-weight:600;text-transform:capitalize}
-.calendario{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;background:#fff;border:1px solid var(--linha);
-  border-radius:14px;padding:12px 10px}
+.calendario{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;background:#fff;border:1px solid var(--linha);
+  border-radius:14px;padding:12px 8px}
 .calendario .cab{text-align:center;font-family:'Jost',sans-serif;font-size:10.5px;letter-spacing:.1em;color:var(--suave);padding-bottom:5px}
-.cel{aspect-ratio:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-size:13px;
-  border-radius:9px;font-variant-numeric:tabular-nums}
-.cel.tem{font-weight:600}
-.cel.hoje{background:var(--tinta);color:#fff}
+.cel{aspect-ratio:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:12.5px;
+  border-radius:9px;font-variant-numeric:tabular-nums;border:0;background:none;font:inherit;color:inherit;
+  cursor:default;padding:0;width:100%}
+.cel:disabled{cursor:default}
+.cel.tem{font-weight:600;cursor:pointer}
+.cel.tem.guia{background:#ECEBE7}
+.cel.tem.dp{background:#FBF4E6}
+.cel.tem.obrigacao{background:#F0F0EE}
+.cel.tem.voce{background:#FBE9E7}
+.cel-valor{font-family:'JetBrains Mono';font-size:8.5px;color:var(--suave)}
+.cel.tem.guia .cel-valor{color:var(--tinta);font-weight:700}
+.cel.hoje{background:var(--tinta)!important;color:#fff}
+.cel.hoje .cel-valor{color:#D9D9D6}
+.cel.sel{box-shadow:inset 0 0 0 2px var(--tinta)}
 .pontos{display:flex;gap:2px;height:5px}
 .pontos b{width:4px;height:4px;border-radius:50%}
 .cel.hoje .pontos b{background:#fff}
