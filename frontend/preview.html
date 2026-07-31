@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<title>Preview · RN Contabilidade</title>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  html,body{margin:0;background:#111}
+  .trocador{position:fixed;top:12px;right:12px;z-index:9999;display:flex;gap:8px;
+    font-family:system-ui,sans-serif}
+  .trocador button{padding:9px 14px;border-radius:8px;border:1px solid #444;background:#000;
+    color:#eee;font-weight:600;font-size:13px;cursor:pointer}
+  .trocador button.on{background:#fff;color:#000;border-color:#fff}
+  #status{position:fixed;bottom:10px;left:12px;color:#888;font:12px system-ui,sans-serif;z-index:9999}
+</style>
+</head>
+<body>
+  <div class="trocador">
+    <button id="btn-cliente" onclick="mostrar('cliente')">App Cliente</button>
+    <button id="btn-painel" onclick="mostrar('painel')">Painel de publicação</button>
+  </div>
+  <div id="status">carregando…</div>
+  <div id="root"></div>
+
+  <script>
+    const cache = {};
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    const status = document.getElementById('status');
+
+    async function carregar(arquivo, nomeComponente) {
+      if (cache[arquivo]) return cache[arquivo];
+      const res = await fetch(arquivo);
+      if (!res.ok) throw new Error('Não achei ' + arquivo + ' — rode este preview a partir da pasta frontend/.');
+      let src = await res.text();
+      src = src.replace(/^import .*$/gm, '');
+      src = src.replace('export default function App', 'function ' + nomeComponente);
+      const codigo = Babel.transform(src, { presets: ['react'] }).code;
+      const factory = new Function('React', 'useState', 'useMemo', codigo + '\nreturn ' + nomeComponente + ';');
+      const Componente = factory(React, React.useState, React.useMemo);
+      cache[arquivo] = Componente;
+      return Componente;
+    }
+
+    async function mostrar(qual) {
+      document.getElementById('btn-cliente').classList.toggle('on', qual === 'cliente');
+      document.getElementById('btn-painel').classList.toggle('on', qual === 'painel');
+      status.textContent = 'carregando…';
+      try {
+        const Componente = qual === 'cliente'
+          ? await carregar('app-cliente.jsx', 'AppCliente')
+          : await carregar('painel-publicacao.jsx', 'AppPainel');
+        root.render(React.createElement(Componente));
+        status.textContent = qual === 'cliente' ? 'App Cliente — clique em Entrar' : 'Painel de publicação';
+      } catch (err) {
+        status.textContent = 'Erro: ' + err.message;
+        console.error(err);
+      }
+    }
+
+    mostrar('cliente');
+  </script>
+</body>
+</html>
