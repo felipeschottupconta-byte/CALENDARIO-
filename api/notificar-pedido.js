@@ -1,33 +1,22 @@
 // api/notificar-pedido.js
 // ============================================================
-// Versão SEM DOMÍNIO PRÓPRIO — envia pelo Gmail via SMTP.
-// Use esta versão enquanto o domínio não estiver comprado/verificado.
-// Quando tiver domínio, troque para a versão com Resend (mais robusta,
-// sem limite diário apertado, com métricas de entrega).
+// Envia os avisos de pedido/recálculo por e-mail via Resend.
+// Troquei de Gmail SMTP pra cá porque login SMTP com senha de app
+// é frágil de configurar via variável de ambiente (espaço/quebra de
+// linha invisível já causou "BadCredentials" mais de uma vez aqui).
+// Resend só precisa de uma chave, sem usuário/senha.
 //
-// Requer: npm install nodemailer
-//
-// Esta function precisa rodar em Node.js, não em "edge" — o
-// nodemailer não funciona no runtime edge da Vercel.
+// Não precisa instalar nada — é uma chamada HTTP direta pra API da
+// Resend, sem SDK.
 //
 // Configuração necessária (Vercel → Settings → Environment Variables):
-//   GMAIL_USER            o e-mail do Gmail que vai enviar
-//   GMAIL_APP_PASSWORD    senha de app gerada nas configurações do Google
-//                         (NÃO é a senha normal da conta — ver instruções abaixo)
-//   EMAIL_DESTINO         e-mail do escritório que recebe os avisos
-//                         (pode ser o mesmo GMAIL_USER)
+//   RESEND_API_KEY   chave gerada em resend.com (Dashboard → API Keys)
+//   EMAIL_DESTINO    e-mail do escritório que recebe os avisos
 //
-// Como gerar a senha de app no Google:
-//   1. myaccount.google.com/security
-//   2. Ativar verificação em duas etapas (obrigatório para senha de app)
-//   3. Buscar "Senhas de app" → gerar uma nova → copiar os 16 caracteres
-//   4. Colar em GMAIL_APP_PASSWORD (sem espaços)
-//
-// Limite do Gmail: ~500 e-mails/dia numa conta pessoal. Para o volume
-// de pedidos de 110 clientes, isso é folga de sobra.
+// Sem domínio próprio verificado na Resend, o remetente tem que ser
+// "onboarding@resend.dev" (domínio de testes deles, funciona de
+// primeira). Quando comprar um domínio, dá pra trocar o remetente.
 // ============================================================
-
-import nodemailer from "nodemailer";
 
 export const config = { runtime: "nodejs" };
 
@@ -76,24 +65,28 @@ Enviado automaticamente pelo Portal do Cliente RN Contabilidade.
   `.trim();
 
   try {
-    const transporte = nodemailer.createTransport({
-      service: "gmail",
-      auth: {
-        user: process.env.GMAIL_USER,
-        pass: process.env.GMAIL_APP_PASSWORD,
+    const r = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+        "Content-Type": "application/json",
       },
+      body: JSON.stringify({
+        from: "Portal RN Contabilidade <onboarding@resend.dev>",
+        to: [process.env.EMAIL_DESTINO],
+        subject: assunto,
+        text: texto,
+      }),
     });
 
-    await transporte.sendMail({
-      from: `"Portal RN Contabilidade" <${process.env.GMAIL_USER}>`,
-      to: process.env.EMAIL_DESTINO,
-      subject: assunto,
-      text: texto,
-    });
+    if (!r.ok) {
+      const corpo = await r.text();
+      throw new Error(`Resend respondeu ${r.status}: ${corpo}`);
+    }
 
     return res.status(200).json({ ok: true });
   } catch (e) {
-    console.error("Erro ao enviar e-mail via Gmail:", e);
+    console.error("Erro ao enviar e-mail via Resend:", e);
     return res.status(500).json({ erro: "Falha ao enviar e-mail", detalhe: String(e) });
   }
 }
