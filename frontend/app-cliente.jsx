@@ -247,12 +247,19 @@ export default function App() {
   const emp = EMPRESAS[empId];
   const avisar = (m) => { setToast(m); setTimeout(() => setToast(null), 2200); };
 
+  const entrar = (cnpjDigitado) => {
+    const limpo = cnpjDigitado.replace(/\D/g, "");
+    const achada = Object.values(EMPRESAS).find((e) => e.cnpj.replace(/\D/g, "") === limpo);
+    setEmpId(achada ? achada.id : "gs");
+    setLogado(true);
+  };
+
   return (
     <>
       <style>{CSS}</style>
       <div className="moldura">
         <div className="tela">
-          {!logado ? <Login onEntrar={() => setLogado(true)} /> : (
+          {!logado ? <Login onEntrar={entrar} /> : (
             <>
               <Topo aba={aba} emp={emp} onTrocar={() => setTrocando(true)} />
               <main className="conteudo">
@@ -278,17 +285,19 @@ export default function App() {
 
 function Login({ onEntrar }) {
   const [manter, setManter] = useState(true);
+  const [cnpj, setCnpj] = useState("52.276.638/0001-53");
   return (
     <div className="login">
       <div className="login-marca"><Marca tamanho={160} /></div>
       <div className="login-form">
-        <label className="campo"><span>CNPJ ou e-mail</span><input defaultValue="52.276.638/0001-53" /></label>
+        <label className="campo"><span>CNPJ ou e-mail</span>
+          <input value={cnpj} onChange={(e) => setCnpj(e.target.value)} /></label>
         <label className="campo"><span>Senha</span><input type="password" defaultValue="••••••••" /></label>
         <button className="switch" onClick={() => setManter(!manter)} aria-pressed={manter}>
           <span className={"trilho" + (manter ? " on" : "")}><i /></span>
           Continuar conectado neste aparelho
         </button>
-        <button className="btn-primario" onClick={onEntrar}>Entrar</button>
+        <button className="btn-primario" onClick={() => onEntrar(cnpj)}>Entrar</button>
         <button className="btn-texto">Esqueci minha senha</button>
       </div>
       <p className="rodape">Nova Friburgo · RJ</p>
