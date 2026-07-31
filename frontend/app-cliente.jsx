@@ -512,9 +512,28 @@ function CardGuia({ g, emp, avisar }) {
       {recalculo ? (
         <p className="obs recalculo-ok">✓ Recálculo pedido — a RN vai revisar e te avisar quando a guia for atualizada.</p>
       ) : (
-        <button className="guia-acao" onClick={() => {
+        <button className="guia-acao" onClick={async () => {
           setRecalculo(true);
-          avisar("Recálculo de " + emp.fantasia + " enviado para " + EMAIL_ESCRITORIO);
+          try {
+            const r = await fetch("/api/notificar-pedido", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                tipo: "recalculo",
+                empresaNome: emp.fantasia,
+                empresaCnpj: emp.cnpj,
+                contatoNome: emp.contato,
+                guiaNome: g.nome,
+                guiaCompetencia: g.comp,
+                guiaValor: brl(g.valor),
+              }),
+            });
+            if (!r.ok) throw new Error();
+            avisar("Recálculo de " + emp.fantasia + " enviado para " + EMAIL_ESCRITORIO);
+          } catch {
+            setRecalculo(false);
+            avisar("Não consegui enviar agora — tenta de novo em instantes");
+          }
         }}>Algo errado nesta guia? Pedir recálculo</button>
       )}
 
@@ -701,11 +720,29 @@ function Pedidos({ emp, pedidos, setPedidos, avisar }) {
         <textarea rows={4} value={texto} onChange={(e) => setTexto(e.target.value)}
           placeholder="Conte o que precisa, prazos, nomes envolvidos…" /></label>
       <button className="btn-secundario largo" onClick={() => avisar("Seletor de arquivos")}>Anexar arquivo ou foto</button>
-      <button className="btn-primario largo" disabled={!tipo} onClick={() => {
-        setPedidos([{ id: "p" + Date.now(), emp: emp.id, tipo: TIPOS_PEDIDO.find((t) => t.id === tipo).label,
+      <button className="btn-primario largo" disabled={!tipo} onClick={async () => {
+        const tipoLabel = TIPOS_PEDIDO.find((t) => t.id === tipo).label;
+        setPedidos([{ id: "p" + Date.now(), emp: emp.id, tipo: tipoLabel,
           texto: texto || "—", etapas: [["Recebido", "05/07"], ["Em andamento", null], ["Concluído", null]] }, ...pedidos]);
         setNovo(false); setTipo(null); setTexto("");
-        avisar("Pedido de " + emp.fantasia + " enviado para " + EMAIL_ESCRITORIO);
+        try {
+          const r = await fetch("/api/notificar-pedido", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              tipo: "pedido",
+              empresaNome: emp.fantasia,
+              empresaCnpj: emp.cnpj,
+              contatoNome: emp.contato,
+              pedidoTipo: tipoLabel,
+              detalhe: texto,
+            }),
+          });
+          if (!r.ok) throw new Error();
+          avisar("Pedido de " + emp.fantasia + " enviado para " + EMAIL_ESCRITORIO);
+        } catch {
+          avisar("Pedido salvo, mas não consegui enviar o e-mail agora");
+        }
       }}>Enviar pedido</button>
     </div>
   );
