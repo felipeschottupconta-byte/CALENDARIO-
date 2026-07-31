@@ -102,7 +102,7 @@ const EMPRESAS = {
   },
   gs: {
     id: "gs", razao: "Gata Serrana Lingerie Ltda", fantasia: "Gata Serrana",
-    cnpj: "52.276.638/0001-53", regime: "Simples Nacional", situacao: "Ativa", contato: "Victor",
+    cnpj: "52.276.638/0001-53", regime: "Simples Nacional", situacao: "Ativa", contato: "Victor", grupo: "victor",
     guias: [
       {
         id: "g1", tipo: "DAS", nome: "Simples Nacional", orgao: "Receita Federal",
@@ -150,7 +150,7 @@ const EMPRESAS = {
   },
   su: {
     id: "su", razao: "Su Lingerie Ltda", fantasia: "Su Lingerie",
-    cnpj: "53.492.794/0001-14", regime: "Simples Nacional", situacao: "Ativa", contato: "Victor",
+    cnpj: "53.492.794/0001-14", regime: "Simples Nacional", situacao: "Ativa", contato: "Victor", grupo: "victor",
     guias: [
       {
         id: "s1", tipo: "DAS", nome: "Simples Nacional", orgao: "Receita Federal",
@@ -215,13 +215,6 @@ const brl = (v) => v == null ? "—" : v.toLocaleString("pt-BR", { style: "curre
 const pct = (v, casas = 2) => v.toLocaleString("pt-BR", { minimumFractionDigits: casas, maximumFractionDigits: casas }) + "%";
 const dataBR = (iso) => iso.split("-").reverse().join("/");
 const dias = (iso) => Math.round((new Date(iso + "T00:00:00") - new Date(HOJE + "T00:00:00")) / 86400000);
-const prazo = (iso) => {
-  const n = dias(iso);
-  if (n < 0) return `${Math.abs(n)} ${Math.abs(n) === 1 ? "dia" : "dias"} em atraso`;
-  if (n === 0) return "Vence hoje";
-  if (n === 1) return "Vence amanhã";
-  return `Vence em ${n} dias`;
-};
 const MESES = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
 const valorAbrev = (v) => v >= 1000
   ? (v / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 }) + "k"
@@ -315,13 +308,17 @@ function Login({ onEntrar }) {
 
 function Topo({ aba, emp, onTrocar }) {
   const t = { guias: "Guias e documentos", agenda: "Agenda de julho", pedidos: "Pedidos", empresa: "Minha empresa" };
+  const grupo = emp.grupo || emp.id;
+  const temIrmas = Object.values(EMPRESAS).some((e) => e.id !== emp.id && (e.grupo || e.id) === grupo);
   return (
     <header className="topo">
       <div className="topo-marca"><Marca tamanho={26} /></div>
       {t[aba] ? <h2 className="topo-titulo">{t[aba]}</h2> : (
         <>
           <p className="topo-ola">Olá, {emp.contato}</p>
-          <button className="troca" onClick={onTrocar}><h2>{emp.fantasia}</h2><span className="seta">▾</span></button>
+          {temIrmas
+            ? <button className="troca" onClick={onTrocar}><h2>{emp.fantasia}</h2><span className="seta">▾</span></button>
+            : <h2 className="troca-fixa">{emp.fantasia}</h2>}
           <p className="topo-cnpj">{emp.cnpj} · {emp.regime}</p>
         </>
       )}
@@ -330,8 +327,8 @@ function Topo({ aba, emp, onTrocar }) {
 }
 
 function Seletor({ atual, onEscolher, onFechar }) {
-  const dono = EMPRESAS[atual].contato;
-  const minhas = Object.values(EMPRESAS).filter((e) => e.contato === dono);
+  const grupo = EMPRESAS[atual].grupo || atual;
+  const minhas = Object.values(EMPRESAS).filter((e) => (e.grupo || e.id) === grupo);
   return (
     <div className="modal" onClick={onFechar}>
       <div className="folha" onClick={(e) => e.stopPropagation()}>
@@ -484,7 +481,7 @@ function CardGuia({ g, emp, avisar }) {
         </div>
         <div className="guia-valor"><strong>{brl(g.valor)}</strong><span>{dataBR(g.venc)}</span></div>
       </div>
-      <span className={"estado " + cor}>{prazo(g.venc)}</span>
+      <span className={"estado " + cor}>{cor === "atraso" ? "Venceu em " : "Vence em "}{dataBR(g.venc)}</span>
       {g.obs && <p className="obs">{g.obs}</p>}
       {g.composicao && (
         <div className="composicao">
@@ -832,6 +829,7 @@ h2,h3,h4,h5{font-family:'Instrument Sans',sans-serif;letter-spacing:-.01em}
 .topo-ola{font-size:13px;color:#9A9A96}
 .troca{background:none;border:0;color:inherit;font:inherit;display:flex;align-items:center;gap:8px;padding:2px 0;cursor:pointer}
 .troca h2{font-size:23px;font-weight:700}
+.troca-fixa{font-size:23px;font-weight:700;padding:2px 0}
 .seta{font-size:12px;color:#8A8A86}
 .topo-cnpj{font-family:'JetBrains Mono';font-size:11px;color:#8A8A86;margin-top:4px}
 .topo-titulo{font-size:22px;font-weight:700}
@@ -932,11 +930,11 @@ h2,h3,h4,h5{font-family:'Instrument Sans',sans-serif;letter-spacing:-.01em}
 .doc span{font-size:12px;color:var(--suave)}
 .baixar{font-size:17px;flex:none}
 
-.calendario{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;background:#fff;border:1px solid var(--linha);
-  border-radius:14px;padding:12px 8px}
-.calendario .cab{text-align:center;font-family:'Jost',sans-serif;font-size:10.5px;letter-spacing:.1em;color:var(--suave);padding-bottom:5px}
-.cel{aspect-ratio:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:12.5px;
-  border-radius:9px;font-variant-numeric:tabular-nums;border:0;background:none;font:inherit;color:inherit;
+.calendario{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;background:#fff;border:1px solid var(--linha);
+  border-radius:14px;padding:9px 6px}
+.calendario .cab{text-align:center;font-family:'Jost',sans-serif;font-size:9px;letter-spacing:.1em;color:var(--suave);padding-bottom:3px}
+.cel{aspect-ratio:1/0.8;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;font-size:11px;
+  border-radius:7px;font-variant-numeric:tabular-nums;border:0;background:none;font:inherit;color:inherit;
   cursor:default;padding:0;width:100%}
 .cel:disabled{cursor:default}
 .cel.tem{font-weight:600;cursor:pointer}
@@ -944,13 +942,13 @@ h2,h3,h4,h5{font-family:'Instrument Sans',sans-serif;letter-spacing:-.01em}
 .cel.tem.dp{background:#FBF4E6}
 .cel.tem.obrigacao{background:#F0F0EE}
 .cel.tem.voce{background:#FBE9E7}
-.cel-valor{font-family:'JetBrains Mono';font-size:8.5px;color:var(--suave)}
+.cel-valor{font-family:'JetBrains Mono';font-size:7px;color:var(--suave)}
 .cel.tem.guia .cel-valor{color:var(--tinta);font-weight:700}
 .cel.hoje{background:var(--tinta)!important;color:#fff}
 .cel.hoje .cel-valor{color:#D9D9D6}
 .cel.sel{box-shadow:inset 0 0 0 2px var(--tinta)}
-.pontos{display:flex;gap:2px;height:5px}
-.pontos b{width:4px;height:4px;border-radius:50%}
+.pontos{display:flex;gap:1.5px;height:4px}
+.pontos b{width:3px;height:3px;border-radius:50%}
 .cel.hoje .pontos b{background:#fff}
 .legenda{display:flex;gap:13px;flex-wrap:wrap;font-size:11.5px;color:var(--suave);padding:0 3px}
 .legenda span{display:flex;align-items:center;gap:5px}
