@@ -34,7 +34,7 @@ export default async function handler(req, res) {
   }
 
   const {
-    tipo,             // "pedido" | "recalculo"
+    tipo,             // "pedido" | "recalculo" | "pagamento"
     empresaNome,
     empresaCnpj,
     contatoNome,
@@ -43,24 +43,33 @@ export default async function handler(req, res) {
     guiaNome,
     guiaCompetencia,
     guiaValor,
+    comComprovante,
+    nomeArquivo,
   } = req.body || {};
 
   if (!empresaNome || !empresaCnpj) {
     return res.status(400).json({ erro: "Dados da empresa ausentes" });
   }
 
-  const ehRecalculo = tipo === "recalculo";
+  let titulo, assunto, linhasDetalhe;
 
-  const assunto = ehRecalculo
-    ? `Recálculo solicitado — ${empresaNome} (${guiaNome || "guia"})`
-    : `Novo pedido — ${empresaNome}: ${pedidoTipo || "assunto não informado"}`;
-
-  const linhasDetalhe = ehRecalculo
-    ? `Guia: ${guiaNome || "—"}\nCompetência: ${guiaCompetencia || "—"}\nValor atual: ${guiaValor || "—"}`
-    : `Tipo de pedido: ${pedidoTipo || "—"}`;
+  if (tipo === "recalculo") {
+    titulo = "PEDIDO DE RECÁLCULO DE GUIA";
+    assunto = `Recálculo solicitado — ${empresaNome} (${guiaNome || "guia"})`;
+    linhasDetalhe = `Guia: ${guiaNome || "—"}\nCompetência: ${guiaCompetencia || "—"}\nValor atual: ${guiaValor || "—"}`;
+  } else if (tipo === "pagamento") {
+    titulo = "GUIA MARCADA COMO PAGA";
+    assunto = `Guia paga — ${empresaNome} (${guiaNome || "guia"})`;
+    linhasDetalhe = `Guia: ${guiaNome || "—"}\nCompetência: ${guiaCompetencia || "—"}\nValor: ${guiaValor || "—"}\n`
+      + (comComprovante ? `Comprovante anexado: ${nomeArquivo || "arquivo enviado"}` : "Marcada sem comprovante");
+  } else {
+    titulo = "NOVO PEDIDO NO PORTAL";
+    assunto = `Novo pedido — ${empresaNome}: ${pedidoTipo || "assunto não informado"}`;
+    linhasDetalhe = `Tipo de pedido: ${pedidoTipo || "—"}`;
+  }
 
   const texto = `
-${ehRecalculo ? "PEDIDO DE RECÁLCULO DE GUIA" : "NOVO PEDIDO NO PORTAL"}
+${titulo}
 
 Empresa: ${empresaNome}
 CNPJ: ${empresaCnpj}

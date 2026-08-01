@@ -63,9 +63,9 @@ class Guia:
     orgao: Optional[str] = None           # RFB | SEFAZ-RJ | PMRJ
     cnpj: Optional[str] = None
     razao_social: Optional[str] = None
-    competencia: Optional[str] = None      # MM/AAAA
+    competencia: Optional[str] = None      # MM/AAAA — "Diversos" nos parcelamentos, fica None
     vencimento: Optional[date] = None
-    valor: Optional[Decimal] = None
+    valor: Optional[Decimal] = None        # sempre o total do documento (principal + multa + juros)
     linha_digitavel: Optional[str] = None
     codigo_receita: Optional[str] = None
     composicao: list[dict] = field(default_factory=list)
@@ -74,16 +74,34 @@ class Guia:
     layout: Optional[str] = None
     alertas: list[str] = field(default_factory=list)
 
+    # DAS de parcelamento (PERT, PARCSN etc.) — cobre várias competências
+    # de uma vez, por isso não tem uma "competencia" única.
+    eh_parcelamento: bool = False
+    parcelamento_sigla: Optional[str] = None     # "PARCSN", "PERT"...
+    parcelamento_numero: Optional[str] = None
+    parcela_atual: Optional[int] = None
+    parcela_total: Optional[int] = None
+    valor_principal: Optional[Decimal] = None
+    valor_multa: Optional[Decimal] = None
+    valor_juros: Optional[Decimal] = None
+    nota: Optional[str] = None
+
     @property
     def publicavel(self) -> bool:
-        """Só sobe para o cliente com os quatro campos que ele precisa."""
+        """Só sobe para o cliente com os quatro campos que ele precisa.
+        Parcelamento sempre passa por revisão humana — não tem competência
+        única pra validar automaticamente."""
+        if self.eh_parcelamento:
+            return False
         return (not self.alertas and self.cnpj and self.vencimento
                 and self.valor is not None and self.competencia is not None)
 
     def to_dict(self):
         d = asdict(self)
         d["vencimento"] = self.vencimento.isoformat() if self.vencimento else None
-        d["valor"] = str(self.valor) if self.valor is not None else None
+        for campo in ("valor", "valor_principal", "valor_multa", "valor_juros"):
+            v = getattr(self, campo)
+            d[campo] = str(v) if v is not None else None
         d["publicavel"] = self.publicavel
         return d
 
@@ -142,13 +160,61 @@ def _darf_ou_das(txt: str, g: Guia) -> None:
             if d:
                 g.competencia = f"{d.month:02d}/{d.year}"
 
+    # Em alguns layouts (parcelamentos "Diversos" e variações do emissor) a
+    # caixa "Observações" fica extraída entre o rótulo e o valor/data acima,
+    # quebrando o casamento numa linha só. O bloco de autenticação no
+    # rodapé (perto do código de barras) é mais estável — usa como reforço.
+    if not g.vencimento:
+        m = re.search(r"Pagar\s+at[ée]:?\s*\n?\s*(\d{2}/\d{2}/\d{4})", txt)
+        if m:
+            g.vencimento = data_br(m.group(1))
+    if not g.competencia:
+        g.competencia = _competencia_de(txt)
+
     m = re.search(r"Valor Total do Documento\s*\n?\s*([\d.,]+)", txt)
     if m:
         g.valor = valor_br(m.group(1))
     if g.valor is None:
-        m = re.search(r"Totais\s+([\d.,]+)", txt)
+        m = re.search(r"\bValor:\s*\n?\s*([\d.,]+)", txt)
         if m:
             g.valor = valor_br(m.group(1))
+    if g.valor is None:
+        m = re.search(r"Totais\s+(.+)", txt)
+        if m:
+            valores = RE_MOEDA.findall(m.group(1))
+            if valores:
+                g.valor = valor_br(valores[-1])  # última coluna da linha "Totais" é o Total
+
+    # DAS de parcelamento (PARCSN, PERT...): cobre várias competências de
+    # uma vez, então "competencia" fica None de propósito — não é falha de
+    # extração, é a natureza do documento.
+    m = re.search(r"N[úu]mero do Parcelamento:\s*(\d+)", txt)
+    if m:
+        g.eh_parcelamento = True
+        g.competencia = None
+        g.parcelamento_numero = m.group(1)
+
+        m_sigla = re.search(r"DAS de (\w+)", txt)
+        if m_sigla:
+            g.parcelamento_sigla = m_sigla.group(1)
+
+        m_parcela = re.search(r"Parcela:\s*(\d+)\s*/\s*(\d+)", txt)
+        if m_parcela:
+            g.parcela_atual = int(m_parcela.group(1))
+            g.parcela_total = int(m_parcela.group(2))
+
+        m_totais = re.search(r"Totais\s+(.+)", txt)
+        if m_totais:
+            valores = RE_MOEDA.findall(m_totais.group(1))
+            if len(valores) >= 4:
+                g.valor_principal = valor_br(valores[0])
+                g.valor_multa = valor_br(valores[1])
+                g.valor_juros = valor_br(valores[2])
+
+        g.nota = (
+            f"Parcelamento {g.parcelamento_sigla or ''} nº {g.parcelamento_numero}"
+            f" — parcela {g.parcela_atual}/{g.parcela_total}, competências diversas."
+        ).replace("  ", " ").strip()
 
     # composição: código, denominação, principal
     for m in re.finditer(r"^(\d{4})\s+([A-ZÀ-Ú][^\n]{3,60}?)\s+([\d.]*\d,\d{2})", txt, re.M):
@@ -273,10 +339,12 @@ def parse_guia(caminho: str | Path) -> Guia:
         g.alertas.append("Vencimento não localizado.")
     if g.valor is None:
         g.alertas.append("Valor não localizado.")
-    if not g.competencia:
+    if not g.competencia and not g.eh_parcelamento:
         g.alertas.append("Competência não localizada.")
     if g.valor is not None and g.valor <= 0:
         g.alertas.append("Valor zerado ou negativo.")
+    if g.eh_parcelamento:
+        g.alertas.append("Guia de parcelamento — confirmar manualmente antes de publicar.")
     return g
 
 

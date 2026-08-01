@@ -1,4 +1,6 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
+import { useAuth } from "./src/lib/useAuth.js";
+import { supabase } from "./src/lib/supabase.js";
 
 /* ============================================================
    PAINEL DE PUBLICAÇÃO — RN Contabilidade
@@ -8,88 +10,13 @@ import React, { useState, useMemo } from "react";
    ============================================================ */
 
 function Marca({ tamanho = 30 }) {
-  return <img src="logo-rn.png" alt="RN Contabilidade" style={{ height: tamanho, width: "auto", display: "block", borderRadius: tamanho * 0.09 }} />;
+  return <img src="/logo-rn.png" alt="RN Contabilidade" style={{ height: tamanho, width: "auto", display: "block", borderRadius: tamanho * 0.09 }} />;
 }
 
-const DADOS_INICIAIS = [
-  {
-    id: "1",
-    arquivo: "807-COFINS-052026.pdf",
-    tipo: "DARF", subtipo: "COFINS", orgao: "RFB",
-    cnpj: "32599342000166", razao: "D F FERNANDES CONFECCOES LTDA",
-    competencia: "05/2026", vencimento: "2026-06-25", valor: 4686.30,
-    codigo: "2172", confianca: 0.97, layout: "senda",
-    linha: "85800000046 1 86300385261 9 76070126169 0 40085398857 4",
-    hash: "a71f3c…", alertas: [], estado: "pronta",
-  },
-  {
-    id: "2",
-    arquivo: "807-PIS-052026.pdf",
-    tipo: "DARF", subtipo: "PIS", orgao: "RFB",
-    cnpj: "32599342000166", razao: "D F FERNANDES CONFECCOES LTDA",
-    competencia: "05/2026", vencimento: "2026-06-25", valor: 1015.37,
-    codigo: "8109", confianca: 0.97, layout: "senda",
-    linha: "85800000010 0 15370385261 0 76070126169 0 39999241201 1",
-    hash: "c40b91…", alertas: [], estado: "pronta",
-  },
-  {
-    id: "3",
-    arquivo: "807-ICMS-052026.pdf",
-    tipo: "DARJ", subtipo: "Operações Próprias — Apuração", orgao: "SEFAZ-RJ",
-    cnpj: "32599342000166", razao: "D F FERNANDES CONFECCOES LTDA",
-    competencia: "05/2026", vencimento: "2026-06-10", valor: 6934.74,
-    confianca: 0.93, layout: "darj",
-    linha: "85810000069 2 34740359120 7 26061001000 6 21336406539 1",
-    hash: "e18d55…", alertas: [], estado: "pronta",
-    composicao: [{ n: "ICMS", v: 2972.04 }, { n: "FECP", v: 3962.70 }],
-  },
-  {
-    id: "4",
-    arquivo: "ICMS_DIFAL_05_2026.pdf",
-    tipo: "DARJ", subtipo: "Diferencial de alíquota", orgao: "SEFAZ-RJ",
-    cnpj: "28885515000135", razao: "NOVA AMERICAN MULTIMARCAS LTDA",
-    competencia: "05/2026", vencimento: "2026-06-10", valor: 81.95,
-    confianca: 0.93, layout: "darj",
-    linha: "85800000000 3 81950359120 5 26061001000 6 21400058958 9",
-    hash: "77ac02…", alertas: [], estado: "pronta",
-    composicao: [{ n: "ICMS", v: 67.53 }, { n: "FECP", v: 14.42 }],
-    obs: "ICMS DIFAL USO E CONSUMO REF FRETE 162980 TJ4 E NFE 5900 ECOBELA",
-  },
-  {
-    id: "5",
-    arquivo: "Simples_Nacional_-_052026.pdf",
-    tipo: "DAS", subtipo: "Simples Nacional", orgao: "RFB",
-    cnpj: "24178588000136", razao: "CERVEJARIA ARTESANAL ANGELS AND DEVILS LTDA",
-    competencia: "05/2026", vencimento: "2026-06-22", valor: 149.48,
-    confianca: 0.97, layout: "senda",
-    linha: "85860000001 2 49480328261 7 73072026166 6 01275618475 8",
-    hash: "3b9e07…", alertas: [], estado: "pronta",
-    composicao: [
-      { n: "IRPJ", v: 9.84 }, { n: "CSLL", v: 6.26 }, { n: "COFINS", v: 20.59 },
-      { n: "PIS", v: 4.45 }, { n: "INSS", v: 67.09 }, { n: "IPI", v: 13.42 },
-      { n: "ICMS", v: 27.83 },
-    ],
-  },
-  {
-    id: "6",
-    arquivo: "ISS_-_052026.PDF",
-    tipo: "?", subtipo: null, orgao: null,
-    cnpj: null, razao: null, competencia: null, vencimento: null, valor: null,
-    confianca: 0, layout: null, hash: "6ae4ef…",
-    alertas: ["PDF sem camada de texto — precisa de OCR."],
-    estado: "revisao",
-  },
-  {
-    id: "7",
-    arquivo: "ISS_-_052026__1_.PDF",
-    tipo: "?", subtipo: null, orgao: null,
-    cnpj: null, razao: null, competencia: null, vencimento: null, valor: null,
-    confianca: 0, layout: null, hash: "6ae4ef…",
-    alertas: ["PDF sem camada de texto — precisa de OCR.", "Arquivo idêntico a ISS_-_052026.PDF"],
-    estado: "revisao", duplicata: "ISS_-_052026.PDF",
-  },
-];
-
+/* ---------- dados de referência/demo — a aba Relatórios ainda não tem
+   tabela própria no banco (só as guias e o cadastro de empresas foram
+   ligados nesta rodada), então continua com este mock. A fila de guias
+   (DADOS_INICIAIS de antes) foi removida — vem do banco agora. ---------- */
 const RELATORIOS = [
   {
     id: "r1",
@@ -136,16 +63,147 @@ const dataBR = (iso) => (iso ? iso.split("-").reverse().join("/") : "—");
 const cnpjFmt = (c) =>
   c ? c.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5") : "—";
 
+function cnpjValido(cnpj) {
+  const c = (cnpj || "").replace(/\D/g, "");
+  if (c.length !== 14 || /^(\d)\1{13}$/.test(c)) return false;
+  const digito = (base) => {
+    let soma = 0, peso = base.length - 7;
+    for (let i = 0; i < base.length; i++) {
+      soma += parseInt(base[i], 10) * peso;
+      peso = peso === 2 ? 9 : peso - 1;
+    }
+    const resto = soma % 11;
+    return resto < 2 ? 0 : 11 - resto;
+  };
+  const dv1 = digito(c.slice(0, 12));
+  const dv2 = digito(c.slice(0, 12) + dv1);
+  return c === c.slice(0, 12) + String(dv1) + String(dv2);
+}
+
+const ROTULO_REGIME = { simples: "Simples Nacional", presumido: "Lucro Presumido", real: "Lucro Real", mei: "MEI", imune: "Imune" };
+
+// Traduz uma linha real de `guias` (+ empresa via join) pro formato que os
+// cartões/detalhe já sabem desenhar. Dois campos que o protótipo mostrava
+// não têm coluna própria hoje: `orgao` (emissor) e `alertas` persistidos —
+// os alertas só existem no momento do upload, ver ÁreaUpload.
+function guiaParaCard(g) {
+  return {
+    id: g.id,
+    arquivo: g.nome_original || "(sem nome de arquivo)",
+    tipo: g.tipo,
+    subtipo: g.descricao,
+    orgao: null,
+    cnpj: g.empresas?.cnpj || null,
+    razao: g.empresas?.razao_social || null,
+    competencia: g.competencia,
+    vencimento: g.vencimento,
+    valor: g.valor != null ? Number(g.valor) : null,
+    codigo: null,
+    confianca: g.confianca != null ? Number(g.confianca) : 0,
+    layout: g.classificado_por,
+    linha: g.linha_digitavel,
+    hash: g.arquivo_hash,
+    alertas: [],
+    estado: g.status === "publicada" || g.status === "paga" ? "publicada" : g.status === "revisao" ? "revisao" : "pronta",
+  };
+}
+
 /* ============================ APP ============================ */
 export default function App() {
-  const [guias, setGuias] = useState(DADOS_INICIAIS);
+  const { carregando, sessao, perfil, semAcesso, entrar, sair } = useAuth();
+
+  if (carregando) {
+    return <><style>{CSS}</style><div className="app"><p style={{ padding: 24 }}>Carregando…</p></div></>;
+  }
+  if (!sessao) {
+    return <><style>{CSS}</style><TelaLoginPainel entrar={entrar} /></>;
+  }
+  if (semAcesso || (perfil && !["admin", "colaborador"].includes(perfil.papel))) {
+    return <><style>{CSS}</style><TelaSemAcessoPainel sair={sair} /></>;
+  }
+  return <><style>{CSS}</style><PainelPrincipal perfil={perfil} sair={sair} /></>;
+}
+
+function TelaLoginPainel({ entrar }) {
+  const [email, setEmail] = useState("");
+  const [senha, setSenha] = useState("");
+  const [erro, setErro] = useState(null);
+  const [enviando, setEnviando] = useState(false);
+
+  const tentar = async () => {
+    if (!email || !senha) { setErro("Preencha e-mail e senha."); return; }
+    setEnviando(true);
+    const msg = await entrar(email, senha);
+    setEnviando(false);
+    setErro(msg ? "E-mail ou senha incorretos." : null);
+  };
+
+  return (
+    <div className="app" style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh" }}>
+      <div className="ficha" style={{ width: "100%", maxWidth: 360, padding: 22 }}>
+        <div style={{ textAlign: "center", marginBottom: 18 }}><Marca tamanho={44} /></div>
+        <h3 style={{ marginBottom: 16 }}>Painel de publicação</h3>
+        <div className="form">
+          <label><span>E-mail</span>
+            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && tentar()} /></label>
+          <label><span>Senha</span>
+            <input type="password" value={senha} onChange={(e) => setSenha(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && tentar()} /></label>
+        </div>
+        {erro && <p className="alerta" style={{ marginTop: 10 }}>{erro}</p>}
+        <button className="btn-primario largo" disabled={enviando} onClick={tentar} style={{ marginTop: 14 }}>
+          {enviando ? "Entrando…" : "Entrar"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function TelaSemAcessoPainel({ sair }) {
+  return (
+    <div className="app" style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh" }}>
+      <div className="ficha" style={{ width: "100%", maxWidth: 360, padding: 22, textAlign: "center" }}>
+        <Marca tamanho={44} />
+        <p className="dica" style={{ marginTop: 14 }}>
+          Este login não tem acesso liberado ao painel. Confirme se o perfil foi cadastrado com
+          papel "admin" ou "colaborador" — ver README-TESTE.md.
+        </p>
+        <button className="btn-secundario largo" onClick={sair} style={{ marginTop: 10 }}>Sair</button>
+      </div>
+    </div>
+  );
+}
+
+function PainelPrincipal({ perfil, sair }) {
+  const [guias, setGuias] = useState([]);
+  const [empresas, setEmpresas] = useState([]);
   const [aba, setAba] = useState("guias");
   const [filtro, setFiltro] = useState("pronta");
   const [sel, setSel] = useState(new Set());
   const [aberta, setAberta] = useState(null);
   const [toast, setToast] = useState(null);
+  const [carregandoLista, setCarregandoLista] = useState(true);
 
   const avisar = (m) => { setToast(m); setTimeout(() => setToast(null), 2400); };
+
+  const recarregarGuias = async () => {
+    const { data } = await supabase
+      .from("guias")
+      .select("*, empresas(razao_social, nome_fantasia, cnpj)")
+      .order("criada_em", { ascending: false });
+    setGuias((data || []).map(guiaParaCard));
+  };
+
+  const recarregarEmpresas = async () => {
+    const { data } = await supabase.from("empresas").select("*").order("razao_social");
+    setEmpresas(data || []);
+  };
+
+  useEffect(() => {
+    setCarregandoLista(true);
+    Promise.all([recarregarGuias(), recarregarEmpresas()]).finally(() => setCarregandoLista(false));
+  }, []);
 
   const contagem = useMemo(() => ({
     pronta: guias.filter((g) => g.estado === "pronta").length,
@@ -161,10 +219,16 @@ export default function App() {
     setSel(n);
   };
 
-  const publicar = () => {
-    const n = sel.size;
-    setGuias(guias.map((g) => (sel.has(g.id) ? { ...g, estado: "publicada" } : g)));
+  const publicar = async () => {
+    const ids = [...sel];
+    const n = ids.length;
+    const { error } = await supabase.from("guias").update({ status: "publicada" }).in("id", ids);
+    if (error) { avisar("Falha ao publicar: " + error.message); return; }
+    await Promise.all(ids.map((id) =>
+      supabase.from("guia_eventos").insert({ guia_id: id, tipo: "publicada", usuario_id: perfil.id })
+    ));
     setSel(new Set());
+    await recarregarGuias();
     avisar(`${n} ${n === 1 ? "guia publicada" : "guias publicadas"} — clientes notificados`);
   };
 
@@ -173,75 +237,310 @@ export default function App() {
     .reduce((s, g) => s + (g.valor || 0), 0);
 
   return (
-    <>
-      <style>{CSS}</style>
-      <div className="app">
-        <header className="topo">
-          <div className="marca">
-            <Marca tamanho={30} />
-            <div>
-              <strong>Painel de publicação</strong>
-              <span>Fila do watcher · 30/07/2026</span>
-            </div>
+    <div className="app">
+      <header className="topo">
+        <div className="marca">
+          <Marca tamanho={30} />
+          <div>
+            <strong>Painel de publicação</strong>
+            <span>{perfil.nome} · {perfil.papel}</span>
           </div>
-          <nav className="abas">
-            <button className={aba === "guias" ? "on" : ""} onClick={() => setAba("guias")}>
-              Guias {contagem.revisao > 0 && <i className="badge">{contagem.revisao}</i>}
-            </button>
-            <button className={aba === "relatorios" ? "on" : ""} onClick={() => setAba("relatorios")}>
-              Relatórios <i className="badge">{RELATORIOS.length}</i>
-            </button>
-          </nav>
-        </header>
+          <button className="btn-fantasma" style={{ marginLeft: "auto", color: "#8E8E8A" }} onClick={sair}>Sair</button>
+        </div>
+        <nav className="abas">
+          <button className={aba === "guias" ? "on" : ""} onClick={() => setAba("guias")}>
+            Guias {contagem.revisao > 0 && <i className="badge">{contagem.revisao}</i>}
+          </button>
+          <button className={aba === "relatorios" ? "on" : ""} onClick={() => setAba("relatorios")}>
+            Relatórios <i className="badge">{RELATORIOS.length}</i>
+          </button>
+          <button className={aba === "empresas" ? "on" : ""} onClick={() => setAba("empresas")}>
+            Empresas <i className="badge">{empresas.length}</i>
+          </button>
+        </nav>
+      </header>
 
-        {aba === "guias" ? (
-          <>
-            <div className="painel-filtros">
-              {[
-                ["pronta", "Prontas", contagem.pronta],
-                ["revisao", "Revisão", contagem.revisao],
-                ["publicada", "Publicadas", contagem.publicada],
-              ].map(([k, l, n]) => (
-                <button key={k} className={"filtro" + (filtro === k ? " on" : "") + (k === "revisao" && n > 0 ? " urgente" : "")}
-                  onClick={() => { setFiltro(k); setSel(new Set()); }}>
-                  <b>{n}</b><span>{l}</span>
-                </button>
-              ))}
-            </div>
+      {aba === "guias" && (
+        <>
+          <AreaUpload empresas={empresas} avisar={avisar} aoTerminar={recarregarGuias} />
 
-            <main className="lista">
-              {lista.length === 0 && (
-                <p className="vazio">Nada aqui. O watcher publica novos arquivos automaticamente.</p>
-              )}
-              {lista.map((g) => (
-                <CardGuia key={g.id} g={g} sel={sel.has(g.id)}
-                  onSel={() => alternar(g.id)} onAbrir={() => setAberta(g)} />
-              ))}
-            </main>
+          <div className="painel-filtros">
+            {[
+              ["pronta", "Prontas", contagem.pronta],
+              ["revisao", "Revisão", contagem.revisao],
+              ["publicada", "Publicadas", contagem.publicada],
+            ].map(([k, l, n]) => (
+              <button key={k} className={"filtro" + (filtro === k ? " on" : "") + (k === "revisao" && n > 0 ? " urgente" : "")}
+                onClick={() => { setFiltro(k); setSel(new Set()); }}>
+                <b>{n}</b><span>{l}</span>
+              </button>
+            ))}
+          </div>
 
-            {sel.size > 0 && (
-              <div className="barra-acao">
-                <div>
-                  <strong>{sel.size} selecionada{sel.size > 1 ? "s" : ""}</strong>
-                  <span>{brl(totalSel)}</span>
-                </div>
-                <div className="barra-botoes">
-                  <button className="btn-fantasma" onClick={() => setSel(new Set())}>Limpar</button>
-                  <button className="btn-primario" onClick={publicar}>Publicar</button>
-                </div>
-              </div>
-            )}
-          </>
-        ) : (
           <main className="lista">
-            {RELATORIOS.map((r) => <CardRelatorio key={r.id} r={r} avisar={avisar} />)}
+            {carregandoLista && <p className="vazio">Carregando…</p>}
+            {!carregandoLista && lista.length === 0 && (
+              <p className="vazio">Nada aqui. Suba PDFs acima ou espere o watcher.</p>
+            )}
+            {lista.map((g) => (
+              <CardGuia key={g.id} g={g} sel={sel.has(g.id)}
+                onSel={() => alternar(g.id)} onAbrir={() => setAberta(g)} />
+            ))}
           </main>
-        )}
 
-        {aberta && <Detalhe g={aberta} onFechar={() => setAberta(null)} avisar={avisar} />}
-        {toast && <div className="toast">{toast}</div>}
+          {sel.size > 0 && (
+            <div className="barra-acao">
+              <div>
+                <strong>{sel.size} selecionada{sel.size > 1 ? "s" : ""}</strong>
+                <span>{brl(totalSel)}</span>
+              </div>
+              <div className="barra-botoes">
+                <button className="btn-fantasma" onClick={() => setSel(new Set())}>Limpar</button>
+                <button className="btn-primario" onClick={publicar}>Publicar</button>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {aba === "relatorios" && (
+        <main className="lista">
+          {RELATORIOS.map((r) => <CardRelatorio key={r.id} r={r} avisar={avisar} />)}
+        </main>
+      )}
+
+      {aba === "empresas" && (
+        <AbaEmpresas empresas={empresas} avisar={avisar} aoCadastrar={recarregarEmpresas} />
+      )}
+
+      {aberta && <Detalhe g={aberta} onFechar={() => setAberta(null)} avisar={avisar} />}
+      {toast && <div className="toast">{toast}</div>}
+    </div>
+  );
+}
+
+/* ---------- upload e classificação ---------- */
+function AreaUpload({ empresas, avisar, aoTerminar }) {
+  const [processando, setProcessando] = useState(false);
+  const [progresso, setProgresso] = useState([]); // [{arquivo, situacao, detalhe}]
+
+  const processarArquivos = async (arquivos) => {
+    setProcessando(true);
+    setProgresso(arquivos.map((f) => ({ arquivo: f.name, situacao: "processando", detalhe: "" })));
+
+    let classificadas = 0, revisao = 0, duplicadas = 0;
+
+    for (let i = 0; i < arquivos.length; i++) {
+      const arquivo = arquivos[i];
+      const atualizar = (patch) => setProgresso((p) => p.map((item, j) => (j === i ? { ...item, ...patch } : item)));
+
+      try {
+        const form = new FormData();
+        form.append("arquivo", arquivo);
+        const resp = await fetch("/api/parse-guia", { method: "POST", body: form });
+        const dados = await resp.json();
+
+        if (!resp.ok) {
+          atualizar({ situacao: "erro", detalhe: dados.erro || "falha ao processar" });
+          continue;
+        }
+
+        // dedup por hash — nunca insere duas vezes o mesmo arquivo
+        const { data: existente } = await supabase
+          .from("guias").select("id").eq("arquivo_hash", dados.arquivo_hash).maybeSingle();
+        if (existente) {
+          duplicadas++;
+          atualizar({ situacao: "duplicada", detalhe: "arquivo já processado" });
+          continue;
+        }
+
+        // empresa vem sempre do CNPJ extraído do PDF — nunca do nome do arquivo
+        let empresa = null;
+        if (dados.cnpj) {
+          empresa = empresas.find((e) => e.cnpj === dados.cnpj) || null;
+        }
+
+        if (!empresa) {
+          revisao++;
+          atualizar({ situacao: "revisao", detalhe: "CNPJ não cadastrado no sistema — cadastre a empresa e suba de novo" });
+          continue;
+        }
+
+        const alertas = dados.alertas || [];
+        const status = alertas.length > 0 ? "revisao" : (dados.publicavel ? "processando" : "revisao");
+        if (status === "revisao") revisao++; else classificadas++;
+
+        const ano = dados.vencimento ? dados.vencimento.slice(0, 4) : new Date().getFullYear();
+        const caminhoStorage = `guias/${dados.cnpj}/${ano}/${dados.arquivo_hash}.pdf`;
+        const { error: erroUpload } = await supabase.storage.from("guias").upload(caminhoStorage, arquivo, {
+          contentType: "application/pdf", upsert: false,
+        });
+        if (erroUpload) {
+          atualizar({ situacao: "erro", detalhe: "falha no upload: " + erroUpload.message });
+          continue;
+        }
+
+        // GFD não tem linha de barras — guia_parser.py guarda o payload Pix
+        // no mesmo campo linha_digitavel; aqui é roteado pra coluna certa.
+        const ehPix = dados.tipo === "GFD";
+
+        const { error: erroInsert } = await supabase.from("guias").insert({
+          empresa_id: empresa.id,
+          tipo: dados.tipo,
+          descricao: dados.subtipo || dados.tipo,
+          competencia: dados.competencia,
+          vencimento: dados.vencimento,
+          valor: dados.valor,
+          linha_digitavel: ehPix ? null : dados.linha_digitavel,
+          pix_copia_cola: ehPix ? dados.linha_digitavel : null,
+          status,
+          storage_path: caminhoStorage,
+          arquivo_hash: dados.arquivo_hash,
+          nome_original: dados.arquivo,
+          origem: "manual",
+          confianca: dados.confianca,
+          classificado_por: dados.layout || "regex",
+        });
+        if (erroInsert) {
+          atualizar({ situacao: "erro", detalhe: erroInsert.message });
+          continue;
+        }
+
+        atualizar({ situacao: status === "revisao" ? "revisao" : "pronta", detalhe: alertas.join(" · ") || "classificada" });
+      } catch (e) {
+        atualizar({ situacao: "erro", detalhe: String(e.message || e) });
+      }
+    }
+
+    setProcessando(false);
+    avisar(`${classificadas} classificada${classificadas === 1 ? "" : "s"}, ${revisao} em revisão, ${duplicadas} duplicada${duplicadas === 1 ? "" : "s"}`);
+    await aoTerminar();
+  };
+
+  return (
+    <div className="upload">
+      <label className="upload-botao">
+        {processando ? "Processando…" : "Subir PDFs"}
+        <input type="file" accept="application/pdf" multiple disabled={processando}
+          onChange={(e) => { const fs = [...e.target.files]; e.target.value = ""; if (fs.length) processarArquivos(fs); }}
+          style={{ display: "none" }} />
+      </label>
+      {progresso.length > 0 && (
+        <div className="upload-lista">
+          {progresso.map((p, i) => (
+            <div key={i} className={"upload-item " + p.situacao}>
+              <span className="mono">{p.arquivo}</span>
+              <span>{p.situacao}{p.detalhe ? " — " + p.detalhe : ""}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---------- cadastro de empresas ---------- */
+function AbaEmpresas({ empresas, avisar, aoCadastrar }) {
+  const [novo, setNovo] = useState(false);
+  if (novo) return <FormNovaEmpresa onCancelar={() => setNovo(false)} avisar={avisar}
+    aoCadastrar={async () => { await aoCadastrar(); setNovo(false); }} />;
+  return (
+    <main className="lista">
+      <button className="btn-primario largo" onClick={() => setNovo(true)}>Nova empresa</button>
+      {empresas.map((e) => (
+        <article className="card" key={e.id} style={{ padding: 14, flexDirection: "column", alignItems: "stretch", gap: 4 }}>
+          <strong>{e.nome_fantasia || e.razao_social}</strong>
+          <span className="empresa mono">{cnpjFmt(e.cnpj)}</span>
+          <span className="empresa">{ROTULO_REGIME[e.regime] || e.regime} · {e.municipio}/{e.uf}</span>
+        </article>
+      ))}
+    </main>
+  );
+}
+
+function FormNovaEmpresa({ onCancelar, avisar, aoCadastrar }) {
+  const [f, setF] = useState({
+    cnpj: "", razao_social: "", nome_fantasia: "", regime: "simples",
+    inscricao_estadual: "", inscricao_municipal: "", municipio: "Nova Friburgo", uf: "RJ",
+    tem_funcionarios: false, tem_prolabore: false, contribuinte_icms: false, contribuinte_iss: false,
+    pasta_origem: "",
+  });
+  const [erro, setErro] = useState(null);
+  const [salvando, setSalvando] = useState(false);
+  const set = (campo) => (v) => setF((s) => ({ ...s, [campo]: v }));
+
+  const salvar = async () => {
+    const cnpjDigitos = f.cnpj.replace(/\D/g, "");
+    if (!cnpjValido(cnpjDigitos)) { setErro("CNPJ inválido — confira o dígito verificador."); return; }
+    if (!f.razao_social.trim()) { setErro("Razão social é obrigatória."); return; }
+
+    setSalvando(true);
+    const { error } = await supabase.from("empresas").insert({
+      cnpj: cnpjDigitos,
+      razao_social: f.razao_social.trim(),
+      nome_fantasia: f.nome_fantasia.trim() || null,
+      regime: f.regime,
+      inscricao_estadual: f.inscricao_estadual || null,
+      inscricao_municipal: f.inscricao_municipal || null,
+      municipio: f.municipio,
+      uf: f.uf,
+      tem_funcionarios: f.tem_funcionarios,
+      tem_prolabore: f.tem_prolabore,
+      contribuinte_icms: f.contribuinte_icms,
+      contribuinte_iss: f.contribuinte_iss,
+      pasta_origem: f.pasta_origem || null,
+    });
+    setSalvando(false);
+
+    if (error) {
+      setErro(error.code === "23505" ? "Já existe uma empresa com esse CNPJ." : error.message);
+      return;
+    }
+    avisar("Empresa cadastrada");
+    await aoCadastrar();
+  };
+
+  return (
+    <main className="lista">
+      <div className="ficha" style={{ padding: 16 }}>
+        <h3 className="sub" style={{ marginTop: 0 }}>Nova empresa</h3>
+        <div className="form">
+          <label><span>CNPJ</span>
+            <input value={f.cnpj} onChange={(e) => set("cnpj")(e.target.value)} placeholder="00.000.000/0000-00" /></label>
+          <label><span>Razão social</span>
+            <input value={f.razao_social} onChange={(e) => set("razao_social")(e.target.value)} /></label>
+          <label><span>Nome fantasia</span>
+            <input value={f.nome_fantasia} onChange={(e) => set("nome_fantasia")(e.target.value)} /></label>
+          <label><span>Regime</span>
+            <select value={f.regime} onChange={(e) => set("regime")(e.target.value)}
+              style={{ font: "inherit", padding: 12, border: "1px solid var(--linha)", borderRadius: 10 }}>
+              {Object.entries(ROTULO_REGIME).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </select></label>
+          <label><span>Inscrição estadual</span>
+            <input value={f.inscricao_estadual} onChange={(e) => set("inscricao_estadual")(e.target.value)} /></label>
+          <label><span>Inscrição municipal</span>
+            <input value={f.inscricao_municipal} onChange={(e) => set("inscricao_municipal")(e.target.value)} /></label>
+          <label><span>Município</span>
+            <input value={f.municipio} onChange={(e) => set("municipio")(e.target.value)} /></label>
+          <label><span>UF</span>
+            <input value={f.uf} maxLength={2} onChange={(e) => set("uf")(e.target.value.toUpperCase())} /></label>
+          <label><span>Pasta de origem (watcher)</span>
+            <input value={f.pasta_origem} onChange={(e) => set("pasta_origem")(e.target.value)} placeholder="\\servidor\clientes\..." /></label>
+          {[["tem_funcionarios", "Tem funcionários"], ["tem_prolabore", "Tem pró-labore"],
+            ["contribuinte_icms", "Contribuinte de ICMS"], ["contribuinte_iss", "Contribuinte de ISS"]].map(([campo, rotulo]) => (
+            <label key={campo} style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <input type="checkbox" checked={f[campo]} onChange={(e) => set(campo)(e.target.checked)} style={{ width: "auto" }} />
+              <span style={{ textTransform: "none", fontSize: 13, fontWeight: 500 }}>{rotulo}</span>
+            </label>
+          ))}
+        </div>
+        {erro && <p className="alerta" style={{ marginTop: 10 }}>{erro}</p>}
+        <div className="acoes">
+          <button className="btn-secundario" onClick={onCancelar}>Cancelar</button>
+          <button className="btn-primario" disabled={salvando} onClick={salvar}>{salvando ? "Salvando…" : "Cadastrar"}</button>
+        </div>
       </div>
-    </>
+    </main>
   );
 }
 
@@ -468,6 +767,16 @@ h1,h2,h3,h4,.valor,.destaque,b{font-family:'Bricolage Grotesque',sans-serif;lett
 .badge{font-style:normal;background:var(--rubro);color:#fff;font-size:10.5px;font-weight:700;
   padding:1px 6px;border-radius:9px;font-family:'JetBrains Mono'}
 
+.upload{padding:14px 16px 0;max-width:860px;margin:0 auto}
+.upload-botao{display:block;text-align:center;background:var(--branco);border:1.5px dashed var(--linha);
+  border-radius:13px;padding:16px;font:inherit;font-weight:600;font-size:14px;color:var(--tinta);cursor:pointer}
+.upload-lista{display:flex;flex-direction:column;gap:6px;margin-top:10px}
+.upload-item{background:var(--branco);border:1px solid var(--linha);border-radius:10px;padding:9px 12px;
+  display:flex;justify-content:space-between;gap:10px;font-size:12px}
+.upload-item.pronta{border-left:3px solid var(--verde)}
+.upload-item.revisao{border-left:3px solid var(--ambar)}
+.upload-item.duplicada{border-left:3px solid var(--suave)}
+.upload-item.erro{border-left:3px solid var(--rubro)}
 .painel-filtros{display:flex;gap:8px;padding:14px 16px 0}
 .filtro{flex:1;background:var(--branco);border:1px solid var(--linha);border-radius:12px;
   padding:11px 8px;display:flex;flex-direction:column;align-items:center;gap:1px;font:inherit;cursor:pointer}

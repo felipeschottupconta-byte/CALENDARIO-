@@ -1,4 +1,11 @@
 frontend/server.log
+frontend/server_test.log
+frontend/dist/
 node_modules/
 .env
+.env.local
+.env.*.local
 frontend/*.pdf
+tests/fixtures/*.pdf
+__pycache__/
+*.pyc

@@ -1,4 +1,12 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import { useAuth } from "./src/lib/useAuth.js";
+import {
+  carregarEmpresasDoUsuario,
+  carregarGuiasDaEmpresa,
+  carregarCargaTributaria,
+  carregarLimiteSimples,
+  registrarEvento,
+} from "./src/lib/queries.js";
 
 /* ============================================================
    PORTAL DO CLIENTE — RN Contabilidade · v3 (navegável completo)
@@ -8,12 +16,14 @@ import React, { useState } from "react";
    ============================================================ */
 
 function Marca({ tamanho = 64 }) {
-  return <img src="logo-rn.png" alt="RN Contabilidade" style={{ height: tamanho, width: "auto", display: "block", borderRadius: tamanho * 0.09 }} />;
+  return <img src="/logo-rn.png" alt="RN Contabilidade" style={{ height: tamanho, width: "auto", display: "block", borderRadius: tamanho * 0.09 }} />;
 }
 
 const HOJE = "2026-07-05";
 
-/* ---------- empresas reais, todas com dados extraídos dos PDFs ---------- */
+/* ---------- dados de referência/demo — não usados pelo app ao vivo,
+   que busca tudo do Supabase (ver src/lib/queries.js). Mantido pra
+   quem quiser rodar localmente sem banco, ou como exemplo de forma. ---------- */
 const EMPRESAS = {
   dff: {
     id: "dff", razao: "D F Fernandes Confecções Ltda", fantasia: "D F Fernandes",
@@ -140,13 +150,56 @@ const EMPRESAS = {
         comp: "06/2026", venc: "2026-07-20", valor: 542.37, novo: true,
         pix: true,
         obs: "4 trabalhadores · sem rescisório, indenização compensatória ou encargos neste mês." },
+      { id: "g4", tipo: "PARC", nome: "Parcelamento Simples Nacional", orgao: "Receita Federal",
+        comp: "07/2026", venc: "2026-07-31", valor: 1698.20, novo: true,
+        linha: "85800000169 8 82004385262 3 07071626210 4 39518190034 6",
+        parcelamento: {
+          numeroProcesso: "10768.720123/2024-11", totalParcelas: 24, parcelaAtual: 9, valorParcela: 1698.20,
+          dataQuitacaoPrevista: "2027-06-25",
+          parcelas: [
+            { numero: 6, vencimento: "2026-04-25", valor: 1698.20, paga: true, pagaEm: "2026-04-24" },
+            { numero: 7, vencimento: "2026-05-25", valor: 1698.20, paga: true, pagaEm: "2026-05-25" },
+            { numero: 8, vencimento: "2026-06-25", valor: 1698.20, paga: true, pagaEm: "2026-06-23" },
+            { numero: 10, vencimento: "2026-08-31", valor: 1698.20, paga: false },
+            { numero: 11, vencimento: "2026-09-30", valor: 1698.20, paga: false },
+            { numero: 12, vencimento: "2026-10-30", valor: 1698.20, paga: false },
+            { numero: 13, vencimento: "2026-11-30", valor: 1698.20, paga: false },
+            { numero: 14, vencimento: "2026-12-30", valor: 1698.20, paga: false },
+            { numero: 15, vencimento: "2027-01-29", valor: 1698.20, paga: false },
+          ],
+        },
+        obs: "Débito do Simples Nacional parcelado em 24 vezes — adesão em agosto/2024." },
     ],
     agenda: [
       { data: "2026-07-08", titulo: "Enviar documentos de junho", nota: "notas e extratos", tipo: "voce" },
       { data: "2026-07-20", titulo: "DAS — Simples Nacional", nota: "R$ 17.844,70", tipo: "guia" },
       { data: "2026-07-20", titulo: "INSS descontado + FGTS", nota: "R$ 1.249,88", tipo: "guia" },
+      { data: "2026-07-31", titulo: "Parcelamento Simples Nacional — parcela 9/24", nota: "R$ 1.698,20", tipo: "guia" },
     ],
     panorama: null,
+    cargaTributaria: {
+      serie: [
+        { comp: "07/2025", cargaPercentual: 9.80 },
+        { comp: "08/2025", cargaPercentual: 10.10 },
+        { comp: "09/2025", cargaPercentual: 10.60 },
+        { comp: "10/2025", cargaPercentual: 11.20 },
+        { comp: "11/2025", cargaPercentual: 10.90 },
+        { comp: "12/2025", cargaPercentual: 9.40 },
+        { comp: "01/2026", cargaPercentual: 10.30 },
+        { comp: "02/2026", cargaPercentual: 10.80 },
+        { comp: "03/2026", cargaPercentual: 11.50 },
+        { comp: "04/2026", cargaPercentual: 11.90 },
+        { comp: "05/2026", cargaPercentual: 10.70 },
+        { comp: "06/2026", cargaPercentual: 10.17 },
+      ],
+      mediaPercentual: 10.61,
+      maior: { comp: "04/2026", cargaPercentual: 11.90 },
+      menor: { comp: "12/2025", cargaPercentual: 9.40 },
+    },
+    limiteSimples: {
+      rbt12Atual: 2113572.55, faixaDe: 1800000.01, faixaAte: 3600000.00,
+      sublimiteIcmsIss: 3600000.00, limiteGeral: 4800000.00, mesesAteSublimite: 6,
+    },
   },
   su: {
     id: "su", razao: "Su Lingerie Ltda", fantasia: "Su Lingerie",
@@ -190,6 +243,60 @@ const EMPRESAS = {
     ],
     panorama: null,
   },
+  pem: {
+    id: "pem", razao: "Puro Estilo Moda Intima Ltda", fantasia: "Puro Estilo",
+    cnpj: "18.294.480/0001-06", regime: "Simples Nacional", situacao: "Ativa", contato: "Victor", grupo: "victor",
+    guias: [
+      {
+        id: "pe1", tipo: "DAS", nome: "Simples Nacional", orgao: "Receita Federal",
+        comp: "06/2026", venc: "2026-07-20", valor: 12555.04, novo: true,
+        linha: "85800000169 8 82004385262 3 07071626210 4 39518190034 6",
+        entenda: {
+          rpa: 137750.24, rbt12: 1250154.53,
+          faixaDe: 720000.01, faixaAte: 1800000.00,
+          anexos: [
+            {
+              nome: "Anexo I - Comércio", receitaTributada: 7609.32,
+              aliquotaNominal: 10.70, aliquotaEfetiva: 8.9002224956942, subtotal: 659.72,
+              tributos: [
+                { nome: "IRPJ", situacao: "Tributado", aliquota: 0.489512237, valor: 37.25 },
+                { nome: "CSLL", situacao: "Tributado", aliquota: 0.311507787, valor: 23.70 },
+                { nome: "COFINS", situacao: "Tributado", aliquota: 1.133888346, valor: 86.28 },
+                { nome: "PIS", situacao: "Tributado", aliquota: 0.245646141, valor: 18.69 },
+                { nome: "INSS/CPP", situacao: "Tributado", aliquota: 3.738093448, valor: 284.44 },
+                { nome: "ICMS", situacao: "Redução", aliquota: 2.981574536, valor: 209.36, reducao: 7.72 },
+              ],
+            },
+            {
+              nome: "Anexo II - Indústria", receitaTributada: 130140.92,
+              aliquotaNominal: 11.20, aliquotaEfetiva: 9.4002224956942, subtotal: 11895.31,
+              tributos: [
+                { nome: "IRPJ", situacao: "Tributado", aliquota: 0.517012237, valor: 672.84 },
+                { nome: "CSLL", situacao: "Tributado", aliquota: 0.329007787, valor: 428.17 },
+                { nome: "COFINS", situacao: "Tributado", aliquota: 1.081965609, valor: 1408.08 },
+                { nome: "PIS", situacao: "Tributado", aliquota: 0.234065540, valor: 304.62 },
+                { nome: "INSS/CPP", situacao: "Tributado", aliquota: 3.525083436, valor: 4587.58 },
+                { nome: "IPI", situacao: "Tributado", aliquota: 0.705016687, valor: 917.52 },
+                { nome: "ICMS", situacao: "Redução", aliquota: 3.008071199, valor: 3576.50, reducao: 8.64 },
+              ],
+            },
+          ],
+          historico: [
+            { comp: "06/2025", receita: 87531.31 }, { comp: "07/2025", receita: 85442.82 },
+            { comp: "08/2025", receita: 176875.85 }, { comp: "09/2025", receita: 123097.46 },
+            { comp: "10/2025", receita: 108547.56 }, { comp: "11/2025", receita: 96431.91 },
+            { comp: "12/2025", receita: 82799.27 }, { comp: "01/2026", receita: 39118.75 },
+            { comp: "02/2026", receita: 83899.45 }, { comp: "03/2026", receita: 94781.79 },
+            { comp: "04/2026", receita: 114817.58 }, { comp: "05/2026", receita: 156810.78 },
+          ],
+        },
+      },
+    ],
+    agenda: [
+      { data: "2026-07-20", titulo: "DAS — Simples Nacional", nota: "R$ 12.555,04", tipo: "guia" },
+    ],
+    panorama: null,
+  },
 };
 
 const DOCUMENTOS = [
@@ -219,6 +326,13 @@ const MESES = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "o
 const valorAbrev = (v) => v >= 1000
   ? (v / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 }) + "k"
   : v.toLocaleString("pt-BR", { maximumFractionDigits: 0 });
+// "Anexo I - Comércio" -> "Comércio (Anexo I)" — usado quando a empresa
+// é tributada em mais de um anexo do Simples na mesma competência.
+const descricaoAnexo = (nome) => {
+  const [num, ...resto] = nome.split(" - ");
+  return resto.length ? `${resto.join(" - ")} (${num})` : nome;
+};
+const juntarLista = (arr) => arr.length <= 1 ? (arr[0] || "") : arr.slice(0, -1).join(", ") + " e " + arr[arr.length - 1];
 
 function Barras({ seed }) {
   const bars = []; let h = 11;
@@ -231,37 +345,125 @@ function Barras({ seed }) {
 
 /* ============================ APP ============================ */
 export default function App() {
-  const [logado, setLogado] = useState(false);
-  const [empId, setEmpId] = useState("gs");
+  const { carregando, sessao, perfil, semAcesso, entrar, sair } = useAuth();
+  const [empresas, setEmpresas] = useState({});
+  const [empId, setEmpId] = useState(null);
+  const [carregandoDados, setCarregandoDados] = useState(false);
   const [trocando, setTrocando] = useState(false);
   const [aba, setAba] = useState("inicio");
   const [pedidos, setPedidos] = useState([]);
+  const [pagas, setPagas] = useState([]);
   const [toast, setToast] = useState(null);
-  const emp = EMPRESAS[empId];
   const avisar = (m) => { setToast(m); setTimeout(() => setToast(null), 2200); };
 
-  const entrar = (id) => { setEmpId(id); setLogado(true); };
+  useEffect(() => {
+    if (!sessao || !perfil || perfil.papel !== "cliente") return;
+    let ativo = true;
+    setCarregandoDados(true);
+    carregarEmpresasDoUsuario(sessao.user.id)
+      .then(async (mapa) => {
+        const ids = Object.keys(mapa);
+        await Promise.all(ids.map(async (id) => {
+          const [guias, cargaTributaria, limiteSimples] = await Promise.all([
+            carregarGuiasDaEmpresa(id),
+            carregarCargaTributaria(id),
+            carregarLimiteSimples(id),
+          ]);
+          mapa[id].guias = guias;
+          mapa[id].contato = perfil.nome;
+          if (cargaTributaria) mapa[id].cargaTributaria = cargaTributaria;
+          if (limiteSimples) mapa[id].limiteSimples = limiteSimples;
+        }));
+        if (!ativo) return;
+        setEmpresas(mapa);
+        setEmpId((atual) => (atual && mapa[atual] ? atual : Object.keys(mapa)[0] || null));
+      })
+      .finally(() => { if (ativo) setCarregandoDados(false); });
+    return () => { ativo = false; };
+  }, [sessao, perfil]);
+
+  const emp = empId ? empresas[empId] : null;
+
+  const marcarPaga = async (g, comComprovante, nomeArquivo) => {
+    setPagas((p) => [...p, g.id]);
+    avisar(comComprovante ? "Guia marcada como paga, com comprovante" : "Guia marcada como paga");
+    try {
+      await registrarEvento(g.id, "marcada_paga", { comComprovante, nomeArquivo });
+      await fetch("/api/notificar-pedido", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tipo: "pagamento",
+          empresaNome: emp.fantasia,
+          empresaCnpj: emp.cnpj,
+          contatoNome: emp.contato,
+          guiaNome: g.nome,
+          guiaCompetencia: g.comp,
+          guiaValor: brl(g.valor),
+          comComprovante,
+          nomeArquivo: nomeArquivo || null,
+        }),
+      });
+    } catch {
+      // marcação já ficou salva na tela; o e-mail é best-effort aqui
+    }
+  };
+
+  if (carregando) {
+    return <div className="moldura"><div className="tela"><p style={{ color: "#fff", padding: 24 }}>Carregando…</p></div></div>;
+  }
+
+  if (!sessao) {
+    return (
+      <>
+        <style>{CSS}</style>
+        <div className="moldura"><div className="tela"><Login entrar={entrar} /></div></div>
+      </>
+    );
+  }
+
+  if (semAcesso || (perfil && perfil.papel !== "cliente")) {
+    return (
+      <>
+        <style>{CSS}</style>
+        <div className="moldura"><div className="tela">
+          <div className="login">
+            <div className="login-marca"><Marca tamanho={160} /></div>
+            <p className="login-erro" style={{ padding: "0 26px" }}>
+              Este login não tem acesso liberado ao Portal do Cliente. Se você é cliente da RN
+              Contabilidade, avise o escritório pra liberarem seu acesso.
+            </p>
+            <button className="btn-texto" onClick={sair}>Sair</button>
+          </div>
+        </div></div>
+      </>
+    );
+  }
 
   return (
     <>
       <style>{CSS}</style>
       <div className="moldura">
         <div className="tela">
-          {!logado ? <Login onEntrar={entrar} /> : (
+          {carregandoDados || !emp ? (
+            <p style={{ color: "#fff", padding: 24 }}>
+              {carregandoDados ? "Carregando suas guias…" : "Nenhuma empresa vinculada a este login ainda."}
+            </p>
+          ) : (
             <>
-              <Topo aba={aba} emp={emp} onTrocar={() => setTrocando(true)} />
+              <Topo aba={aba} emp={emp} onTrocar={() => setTrocando(true)} temIrmas={Object.keys(empresas).length > 1} />
               <main className="conteudo">
-                {aba === "inicio" && <Inicio emp={emp} ir={setAba} avisar={avisar} />}
-                {aba === "guias" && <Guias emp={emp} avisar={avisar} />}
+                {aba === "inicio" && <Inicio emp={emp} ir={setAba} avisar={avisar} pagas={pagas} />}
+                {aba === "guias" && <Guias emp={emp} avisar={avisar} pagas={pagas} marcarPaga={marcarPaga} />}
                 {aba === "agenda" && <Agenda emp={emp} />}
                 {aba === "pedidos" && <Pedidos emp={emp} pedidos={pedidos} setPedidos={setPedidos} avisar={avisar} />}
-                {aba === "empresa" && <Empresa emp={emp} onSair={() => { setLogado(false); setAba("inicio"); }} />}
+                {aba === "empresa" && <Empresa emp={emp} onSair={sair} />}
               </main>
               <Abas aba={aba} setAba={setAba} />
             </>
           )}
           {trocando && (
-            <Seletor atual={empId} onEscolher={(id) => { setEmpId(id); setTrocando(false); setAba("inicio"); }}
+            <Seletor atual={empId} empresas={empresas} onEscolher={(id) => { setEmpId(id); setTrocando(false); setAba("inicio"); }}
               onFechar={() => setTrocando(false)} />
           )}
           {toast && <div className="toast">{toast}</div>}
@@ -271,33 +473,38 @@ export default function App() {
   );
 }
 
-function Login({ onEntrar }) {
+function Login({ entrar }) {
   const [manter, setManter] = useState(true);
-  const [cnpj, setCnpj] = useState("52.276.638/0001-53");
+  const [email, setEmail] = useState("");
+  const [senha, setSenha] = useState("");
   const [erro, setErro] = useState(null);
+  const [enviando, setEnviando] = useState(false);
 
-  const tentar = () => {
-    const limpo = cnpj.replace(/\D/g, "");
-    const texto = cnpj.trim().toLowerCase();
-    const achada = Object.values(EMPRESAS).find((e) =>
-      (limpo.length >= 8 && e.cnpj.replace(/\D/g, "") === limpo)
-      || (texto.length >= 3 && e.fantasia.toLowerCase().includes(texto)));
-    if (achada) { setErro(null); onEntrar(achada.id); }
-    else setErro('Não encontrei essa empresa. Ainda não temos e-mail cadastrado — use o CNPJ ou o nome, ex.: "D F Fernandes".');
+  const tentar = async () => {
+    if (!email || !senha) { setErro("Preencha e-mail e senha."); return; }
+    setEnviando(true);
+    const msg = await entrar(email, senha);
+    setEnviando(false);
+    setErro(msg ? "E-mail ou senha incorretos." : null);
   };
 
   return (
     <div className="login">
       <div className="login-marca"><Marca tamanho={160} /></div>
       <div className="login-form">
-        <label className="campo"><span>CNPJ ou nome da empresa</span>
-          <input value={cnpj} onChange={(e) => setCnpj(e.target.value)} /></label>
-        <label className="campo"><span>Senha</span><input type="password" defaultValue="••••••••" /></label>
+        <label className="campo"><span>E-mail</span>
+          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && tentar()} /></label>
+        <label className="campo"><span>Senha</span>
+          <input type="password" value={senha} onChange={(e) => setSenha(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && tentar()} /></label>
         <button className="switch" onClick={() => setManter(!manter)} aria-pressed={manter}>
           <span className={"trilho" + (manter ? " on" : "")}><i /></span>
           Continuar conectado neste aparelho
         </button>
-        <button className="btn-primario" onClick={tentar}>Entrar</button>
+        <button className="btn-primario" disabled={enviando} onClick={tentar}>
+          {enviando ? "Entrando…" : "Entrar"}
+        </button>
         {erro && <p className="login-erro">{erro}</p>}
         <button className="btn-texto">Esqueci minha senha</button>
       </div>
@@ -306,10 +513,8 @@ function Login({ onEntrar }) {
   );
 }
 
-function Topo({ aba, emp, onTrocar }) {
+function Topo({ aba, emp, onTrocar, temIrmas }) {
   const t = { guias: "Guias e documentos", agenda: "Agenda de julho", pedidos: "Pedidos", empresa: "Minha empresa" };
-  const grupo = emp.grupo || emp.id;
-  const temIrmas = Object.values(EMPRESAS).some((e) => e.id !== emp.id && (e.grupo || e.id) === grupo);
   return (
     <header className="topo">
       <div className="topo-marca"><Marca tamanho={26} /></div>
@@ -326,9 +531,8 @@ function Topo({ aba, emp, onTrocar }) {
   );
 }
 
-function Seletor({ atual, onEscolher, onFechar }) {
-  const grupo = EMPRESAS[atual].grupo || atual;
-  const minhas = Object.values(EMPRESAS).filter((e) => (e.grupo || e.id) === grupo);
+function Seletor({ atual, empresas, onEscolher, onFechar }) {
+  const minhas = Object.values(empresas);
   return (
     <div className="modal" onClick={onFechar}>
       <div className="folha" onClick={(e) => e.stopPropagation()}>
@@ -351,9 +555,10 @@ function Seletor({ atual, onEscolher, onFechar }) {
   );
 }
 
-function Inicio({ emp, ir, avisar }) {
-  const total = emp.guias.reduce((s, g) => s + g.valor, 0);
-  const prox = [...emp.guias].sort((a, b) => a.venc.localeCompare(b.venc))[0];
+function Inicio({ emp, ir, avisar, pagas }) {
+  const pendentes = emp.guias.filter((g) => !pagas.includes(g.id));
+  const total = pendentes.reduce((s, g) => s + g.valor, 0);
+  const prox = [...pendentes].sort((a, b) => a.venc.localeCompare(b.venc))[0];
   const novos = DOCUMENTOS.filter((d) => d.novo).length;
   return (
     <div className="pilha">
@@ -361,11 +566,15 @@ function Inicio({ emp, ir, avisar }) {
         <p className="rotulo">A pagar em julho</p>
         <p className="numero">{total > 0 ? brl(total) : "Nada em aberto"}</p>
         <p className="nota">
-          {total > 0 ? `${emp.guias.length} ${emp.guias.length === 1 ? "guia" : "guias"} · a primeira vence em ${dataBR(prox.venc)}`
+          {total > 0 ? `${pendentes.length} ${pendentes.length === 1 ? "guia" : "guias"} · a primeira vence em ${dataBR(prox.venc)}`
                      : "Nenhuma guia publicada para este mês ainda"}
         </p>
         {total > 0 && <button className="btn-claro" onClick={() => ir("guias")}>Ver guias</button>}
       </section>
+
+      {emp.cargaTributaria && <CardCargaTributaria ct={emp.cargaTributaria} />}
+
+      {emp.regime === "Simples Nacional" && emp.limiteSimples && <CardLimiteSimples ls={emp.limiteSimples} />}
 
       {emp.panorama && <Panorama p={emp.panorama} />}
 
@@ -423,6 +632,158 @@ function Panorama({ p }) {
   );
 }
 
+function CardCargaTributaria({ ct }) {
+  const [aberto, setAberto] = useState(false);
+  const [selecionado, setSelecionado] = useState(null);
+  const atual = ct.serie[ct.serie.length - 1].comp;
+  const maxCarga = Math.max(...ct.serie.map((m) => m.cargaPercentual));
+
+  return (
+    <section className="panorama">
+      <div>
+        <span className="etiqueta">Carga tributária média</span>
+        <p className="carga-pct">{pct(ct.mediaPercentual)}</p>
+        <p className="fino">dos últimos 12 meses</p>
+      </div>
+
+      <button className="btn-fantasma largo" onClick={() => setAberto(!aberto)}>
+        {aberto ? "Ocultar evolução mensal" : "Ver evolução mensal"}
+      </button>
+
+      {aberto && (
+        <div className="pan-detalhe">
+          <div className="historico">
+            <div className="historico-grafico">
+              {ct.serie.map((m, i) => (
+                <button key={m.comp} type="button"
+                  className={"historico-coluna" + (m.comp === atual ? " atual" : "")}
+                  onClick={() => setSelecionado(selecionado === i ? null : i)}>
+                  <div className="historico-barra" style={{ height: `${(m.cargaPercentual / maxCarga) * 100}%` }} />
+                  <span>{MESES[+m.comp.slice(0, 2) - 1]}</span>
+                </button>
+              ))}
+            </div>
+            <p className="historico-legenda">
+              {selecionado != null
+                ? `${ct.serie[selecionado].comp}: ${pct(ct.serie[selecionado].cargaPercentual)}`
+                : "Toque numa barra para ver o valor exato do mês"}
+            </p>
+          </div>
+
+          <div className="pan-numeros">
+            <div><b>{pct(ct.maior.cargaPercentual)}</b><span>maior · {ct.maior.comp}</span></div>
+            <div><b>{pct(ct.menor.cargaPercentual)}</b><span>menor · {ct.menor.comp}</span></div>
+            <div><b>{pct(ct.mediaPercentual)}</b><span>média</span></div>
+          </div>
+
+          <p className="fino">
+            A carga varia mês a mês conforme a faixa de faturamento no Simples Nacional e o mix de
+            tributos recolhidos naquele período.
+          </p>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function CardLimiteSimples({ ls }) {
+  const ultrapassou = ls.rbt12Atual >= ls.sublimiteIcmsIss;
+  const percentualSublimite = Math.min(100, (ls.rbt12Atual / ls.sublimiteIcmsIss) * 100);
+  const estado = ultrapassou || percentualSublimite >= 90 ? "alerta" : percentualSublimite >= 70 ? "atencao" : "neutro";
+  const marcadorPct = Math.min(100, (ls.faixaDe / ls.sublimiteIcmsIss) * 100);
+
+  return (
+    <section className={"panorama limite " + estado}>
+      <div>
+        <span className="etiqueta">Sublimite de ICMS e ISS</span>
+        <p className="carga-pct">{brl(ls.rbt12Atual)}</p>
+        <p className="fino">de {brl(ls.sublimiteIcmsIss)} de sublimite (RBT12 acumulado)</p>
+      </div>
+
+      <div className="medidor-barra">
+        <div className="medidor-preenchido" style={{ width: percentualSublimite + "%" }} />
+        <div className="limite-marcador" style={{ left: marcadorPct + "%" }} title="Início da faixa atual" />
+      </div>
+      <p className="fino">{pct(percentualSublimite)} do sublimite · faixa atual de {brl(ls.faixaDe)} a {brl(ls.faixaAte)}</p>
+
+      {ultrapassou && (
+        <p className="pan-alerta alerta">
+          O RBT12 já ultrapassou o sublimite de ICMS e ISS. Sua empresa continua no Simples para os
+          tributos federais, mas ICMS e ISS passam a ser recolhidos fora do DAS, pelas regras normais
+          do estado e do município.
+        </p>
+      )}
+      {!ultrapassou && estado !== "neutro" && (
+        <p className={"pan-alerta" + (estado === "alerta" ? " alerta" : "")}>
+          O RBT12 já soma {pct(percentualSublimite)} do sublimite de ICMS e ISS.
+        </p>
+      )}
+
+      {ls.mesesAteSublimite != null && (
+        <p className="fino">
+          No ritmo dos últimos 3 meses, o sublimite seria atingido em aproximadamente{" "}
+          {ls.mesesAteSublimite} {ls.mesesAteSublimite === 1 ? "mês" : "meses"}.
+        </p>
+      )}
+
+      <p className="fino">
+        Estimativa baseada na média recente de faturamento — não substitui a análise do escritório,
+        que entra em contato caso algo exija atenção.
+      </p>
+    </section>
+  );
+}
+
+function DetalheParcelamento({ pc }) {
+  const [aberto, setAberto] = useState(false);
+  const restantes = pc.totalParcelas - pc.parcelaAtual + 1;
+  const saldo = pc.valorParcela * restantes;
+  const concluido = Math.round((100 * (pc.parcelaAtual - 1)) / pc.totalParcelas);
+  const proximas = [...pc.parcelas].filter((x) => !x.paga).sort((a, b) => a.vencimento.localeCompare(b.vencimento)).slice(0, 6);
+  const quitadas = [...pc.parcelas].filter((x) => x.paga).sort((a, b) => b.pagaEm.localeCompare(a.pagaEm)).slice(0, 6);
+
+  return (
+    <div className="pilha-fina">
+      <div className="medidor-barra"><div className="medidor-preenchido" style={{ width: concluido + "%" }} /></div>
+      <div className="parc-legenda">
+        <span>{concluido}% concluído · parcela {pc.parcelaAtual} de {pc.totalParcelas}</span>
+        {pc.numeroProcesso && <span>processo {pc.numeroProcesso}</span>}
+      </div>
+      <div className="pan-numeros">
+        <div><b>{brl(saldo)}</b><span>saldo restante</span></div>
+        <div><b>{pc.dataQuitacaoPrevista ? dataBR(pc.dataQuitacaoPrevista) : "—"}</b><span>quitação prevista</span></div>
+      </div>
+      <button className="guia-acao" onClick={() => setAberto(!aberto)}>
+        {aberto ? "Ocultar parcelas" : "Ver parcelas"}
+      </button>
+      {aberto && (
+        <div className="pilha-fina">
+          {proximas.length > 0 && (
+            <div>
+              <span className="etiqueta">Próximas parcelas</span>
+              <div className="composicao">
+                {proximas.map((x) => (
+                  <div key={x.numero}><span>Parcela {x.numero} · {dataBR(x.vencimento)}</span><b>{brl(x.valor)}</b></div>
+                ))}
+              </div>
+            </div>
+          )}
+          {quitadas.length > 0 && (
+            <div>
+              <span className="etiqueta">Últimas pagas</span>
+              <div className="composicao">
+                {quitadas.map((x) => (
+                  <div key={x.numero}><span>Parcela {x.numero} · paga em {dataBR(x.pagaEm)}</span><b>{brl(x.valor)}</b></div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Linha({ e }) {
   return (
     <div className={"linha linha-" + e.tipo}>
@@ -433,8 +794,9 @@ function Linha({ e }) {
   );
 }
 
-function Guias({ emp, avisar }) {
+function Guias({ emp, avisar, pagas, marcarPaga }) {
   const [vista, setVista] = useState("guias");
+  const pendentes = emp.guias.filter((g) => !pagas.includes(g.id));
   return (
     <div className="pilha">
       <div className="segmentado">
@@ -442,9 +804,9 @@ function Guias({ emp, avisar }) {
         <button className={vista === "docs" ? "on" : ""} onClick={() => setVista("docs")}>Documentos</button>
       </div>
       {vista === "guias" ? (
-        emp.guias.length
-          ? emp.guias.map((g) => <CardGuia key={g.id} g={g} emp={emp} avisar={avisar} />)
-          : <p className="vazio">Nenhuma guia publicada para este mês. Avisamos assim que houver.</p>
+        pendentes.length
+          ? pendentes.map((g) => <CardGuia key={g.id} g={g} emp={emp} avisar={avisar} marcarPaga={marcarPaga} />)
+          : <p className="vazio">Nenhuma guia em aberto. Avisamos assim que houver.</p>
       ) : (
         <div className="pilha-fina">
           {DOCUMENTOS.map((d) => (
@@ -459,16 +821,38 @@ function Guias({ emp, avisar }) {
   );
 }
 
-function CardGuia({ g, emp, avisar }) {
+function CardGuia({ g, emp, avisar, marcarPaga }) {
   const [aberto, setAberto] = useState(false);
   const [entenda, setEntenda] = useState(false);
   const [tribAberto, setTribAberto] = useState(null);
   const [histAberto, setHistAberto] = useState(false);
   const [recalculo, setRecalculo] = useState(false);
+  const [pagando, setPagando] = useState(false);
+  const [arquivo, setArquivo] = useState(null);
   const n = dias(g.venc);
   const cor = n < 0 ? "atraso" : n <= 5 ? "atencao" : "normal";
   const e = g.entenda;
   const maxHist = e ? Math.max(...e.historico.map((h) => h.receita)) : 0;
+  const multiplo = e && e.anexos && e.anexos.length > 1;
+  const somaReceitaAnexos = multiplo ? e.anexos.reduce((s, a) => s + a.receitaTributada, 0) : 0;
+  const aliquotaNominalMedia = multiplo
+    ? e.anexos.reduce((s, a) => s + a.aliquotaNominal * a.receitaTributada, 0) / somaReceitaAnexos : 0;
+  const aliquotaEfetivaMedia = multiplo
+    ? e.anexos.reduce((s, a) => s + a.aliquotaEfetiva * a.receitaTributada, 0) / somaReceitaAnexos : 0;
+  const tributosConsolidados = multiplo ? (() => {
+    const mapa = {};
+    e.anexos.forEach((a) => a.tributos.forEach((t) => {
+      if (!mapa[t.nome]) mapa[t.nome] = { nome: t.nome, situacao: t.situacao, valor: 0, porAnexo: [] };
+      mapa[t.nome].valor += t.valor;
+      mapa[t.nome].porAnexo.push({ anexo: a.nome, valor: t.valor });
+    }));
+    return Object.values(mapa);
+  })() : [];
+
+  useEffect(() => {
+    if (g.id) registrarEvento(g.id, "vista");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [g.id]);
 
   return (
     <article className={"guia " + cor}>
@@ -488,9 +872,12 @@ function CardGuia({ g, emp, avisar }) {
           {g.composicao.map((c, i) => <div key={i}><span>{c.n}</span><b>{brl(c.v)}</b></div>)}
         </div>
       )}
+      {g.parcelamento && <DetalheParcelamento pc={g.parcelamento} />}
 
       {g.pix ? (
-        <button className="guia-acao" onClick={() => avisar("Chave Pix copiada")}>Copiar Pix copia e cola</button>
+        <button className="guia-acao" onClick={() => { avisar("Chave Pix copiada"); registrarEvento(g.id, "baixada"); }}>
+          Copiar Pix copia e cola
+        </button>
       ) : (
         <>
           <button className="guia-acao" onClick={() => setAberto(!aberto)}>
@@ -501,12 +888,30 @@ function CardGuia({ g, emp, avisar }) {
               <Barras seed={g.linha} />
               <code>{g.linha}</code>
               <div className="dupla">
-                <button className="btn-primario pequeno" onClick={() => avisar("Código copiado")}>Copiar código</button>
-                <button className="btn-secundario pequeno" onClick={() => avisar("Baixando guia em PDF")}>PDF</button>
+                <button className="btn-primario pequeno" onClick={() => { avisar("Código copiado"); registrarEvento(g.id, "baixada"); }}>Copiar código</button>
+                <button className="btn-secundario pequeno" onClick={() => { avisar("Baixando guia em PDF"); registrarEvento(g.id, "baixada"); }}>PDF</button>
               </div>
             </div>
           )}
         </>
+      )}
+
+      {pagando ? (
+        <div className="pilha-fina">
+          <label className="campo">
+            <span>Comprovante (opcional)</span>
+            <input type="file" accept="image/*,.pdf" onChange={(ev) => setArquivo(ev.target.files[0] || null)} />
+          </label>
+          {arquivo && <p className="fino">Anexado: {arquivo.name}</p>}
+          <div className="dupla">
+            <button className="btn-secundario pequeno" onClick={() => { setPagando(false); setArquivo(null); }}>Cancelar</button>
+            <button className="btn-primario pequeno" onClick={() => marcarPaga(g, !!arquivo, arquivo?.name)}>
+              Confirmar
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button className="guia-acao" onClick={() => setPagando(true)}>Marcar como paga</button>
       )}
 
       {recalculo ? (
@@ -545,69 +950,126 @@ function CardGuia({ g, emp, avisar }) {
 
           {entenda && (
             <div className="entenda">
-              <p className="explicacao">
-                Sua empresa está no <strong>{e.anexo}</strong>. Sobre o que você faturou nesta
-                competência ({brl(e.rpa)}), o Simples aplicou uma alíquota efetiva de{" "}
-                <strong>{pct(e.aliquotaEfetiva)}</strong> — não os {pct(e.aliquotaNominal, 2)} nominais
-                da sua faixa. A efetiva é sempre menor, porque a tabela tem uma parcela a deduzir
-                embutida no cálculo.
-              </p>
+              {!multiplo ? (
+                <>
+                  <p className="explicacao">
+                    Sua empresa está no <strong>{e.anexo}</strong>. Sobre o que você faturou nesta
+                    competência ({brl(e.rpa)}), o Simples aplicou uma alíquota efetiva de{" "}
+                    <strong>{pct(e.aliquotaEfetiva)}</strong> — não os {pct(e.aliquotaNominal, 2)} nominais
+                    da sua faixa. A efetiva é sempre menor, porque a tabela tem uma parcela a deduzir
+                    embutida no cálculo.
+                  </p>
 
-              <div className="medidor">
-                <div className="medidor-linha"><span>Alíquota nominal da faixa</span><b className="apagado">{pct(e.aliquotaNominal, 2)}</b></div>
-                <div className="medidor-barra">
-                  <div className="medidor-preenchido" style={{ width: `${(e.aliquotaEfetiva / e.aliquotaNominal) * 100}%` }} />
-                </div>
-                <div className="medidor-linha"><span>O que você paga de fato (efetiva)</span><b>{pct(e.aliquotaEfetiva)}</b></div>
-              </div>
-
-              <h5 className="sub">Para onde vai cada real</h5>
-              <div className="tributos">
-                {e.tributos.map((t, i) => {
-                  const abertoTrib = tribAberto === i;
-                  const largura = (t.valor / g.valor) * 100;
-                  return (
-                    <button key={i} className={"trib" + (abertoTrib ? " aberto" : "")}
-                            onClick={() => setTribAberto(abertoTrib ? null : i)}>
-                      <div className="trib-linha1">
-                        <span className="trib-nome">{t.nome}</span>
-                        {t.situacao === "Redução" && <span className="chip-reducao">redução</span>}
-                        <span className="trib-valor">{brl(t.valor)}</span>
-                      </div>
-                      <div className="trib-barra-fundo"><div className="trib-barra" style={{ width: `${largura}%` }} /></div>
-                      {abertoTrib && (
-                        <div className="trib-detalhe">
-                          <div><span>Base de cálculo</span><b>{brl(e.rpa)}</b></div>
-                          <div><span>Alíquota efetiva deste tributo</span><b>{pct(t.aliquota, 3)}</b></div>
-                          {t.reducao && <div><span>Redução aplicada na base do ICMS</span><b>{pct(t.reducao)}</b></div>}
-                          <p className="trib-nota">
-                            {t.nome === "INSS/CPP" && "A parte da Previdência — a maior fatia do Simples para quem tem funcionários."}
-                            {t.nome === "COFINS" && "Contribuição federal sobre o faturamento, embutida na guia única."}
-                            {t.nome === "ICMS" && "Imposto estadual sobre a venda de mercadorias, com redução de 3,23% aplicada pelo estado do RJ."}
-                            {t.nome === "IRPJ" && "Imposto de Renda da empresa, já recolhido dentro do DAS."}
-                            {t.nome === "CSLL" && "Contribuição sobre o lucro, recolhida junto com os demais tributos federais."}
-                            {t.nome === "PIS" && "Contribuição federal sobre o faturamento, menor fatia da partilha."}
-                          </p>
-                        </div>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-
-              {e.proximo && (
-                <div className="alerta-tendencia">
-                  <span className="seta-tendencia">↗</span>
-                  <div>
-                    <strong>Sua alíquota deve subir no próximo mês</strong>
-                    <p>
-                      A receita dos últimos 12 meses está subindo — a alíquota efetiva projetada
-                      para {e.proximo.comp} é de {pct(e.proximo.aliquotaEfetiva)}, um aumento de{" "}
-                      {pct(e.proximo.aliquotaEfetiva - e.aliquotaEfetiva, 2)}. Isso acontece mesmo
-                      com faturamento parecido, porque o que entra na conta é o acumulado de 12 meses.
-                    </p>
+                  <div className="medidor">
+                    <div className="medidor-linha"><span>Alíquota nominal da faixa</span><b className="apagado">{pct(e.aliquotaNominal, 2)}</b></div>
+                    <div className="medidor-barra">
+                      <div className="medidor-preenchido" style={{ width: `${(e.aliquotaEfetiva / e.aliquotaNominal) * 100}%` }} />
+                    </div>
+                    <div className="medidor-linha"><span>O que você paga de fato (efetiva)</span><b>{pct(e.aliquotaEfetiva)}</b></div>
                   </div>
-                </div>
+
+                  <h5 className="sub">Para onde vai cada real</h5>
+                  <div className="tributos">
+                    {e.tributos.map((t, i) => {
+                      const abertoTrib = tribAberto === i;
+                      const largura = (t.valor / g.valor) * 100;
+                      return (
+                        <button key={i} className={"trib" + (abertoTrib ? " aberto" : "")}
+                                onClick={() => setTribAberto(abertoTrib ? null : i)}>
+                          <div className="trib-linha1">
+                            <span className="trib-nome">{t.nome}</span>
+                            {t.situacao === "Redução" && <span className="chip-reducao">redução</span>}
+                            <span className="trib-valor">{brl(t.valor)}</span>
+                          </div>
+                          <div className="trib-barra-fundo"><div className="trib-barra" style={{ width: `${largura}%` }} /></div>
+                          {abertoTrib && (
+                            <div className="trib-detalhe">
+                              <div><span>Base de cálculo</span><b>{brl(e.rpa)}</b></div>
+                              <div><span>Alíquota efetiva deste tributo</span><b>{pct(t.aliquota, 3)}</b></div>
+                              {t.reducao && <div><span>Redução aplicada na base do ICMS</span><b>{pct(t.reducao)}</b></div>}
+                              <p className="trib-nota">
+                                {t.nome === "INSS/CPP" && "A parte da Previdência — a maior fatia do Simples para quem tem funcionários."}
+                                {t.nome === "COFINS" && "Contribuição federal sobre o faturamento, embutida na guia única."}
+                                {t.nome === "ICMS" && "Imposto estadual sobre a venda de mercadorias, com redução de 3,23% aplicada pelo estado do RJ."}
+                                {t.nome === "IRPJ" && "Imposto de Renda da empresa, já recolhido dentro do DAS."}
+                                {t.nome === "CSLL" && "Contribuição sobre o lucro, recolhida junto com os demais tributos federais."}
+                                {t.nome === "PIS" && "Contribuição federal sobre o faturamento, menor fatia da partilha."}
+                              </p>
+                            </div>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {e.proximo && (
+                    <div className="alerta-tendencia">
+                      <span className="seta-tendencia">↗</span>
+                      <div>
+                        <strong>Sua alíquota deve subir no próximo mês</strong>
+                        <p>
+                          A receita dos últimos 12 meses está subindo — a alíquota efetiva projetada
+                          para {e.proximo.comp} é de {pct(e.proximo.aliquotaEfetiva)}, um aumento de{" "}
+                          {pct(e.proximo.aliquotaEfetiva - e.aliquotaEfetiva, 2)}. Isso acontece mesmo
+                          com faturamento parecido, porque o que entra na conta é o acumulado de 12 meses.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  <p className="explicacao">
+                    Sua empresa fatura em mais de uma frente — {juntarLista(e.anexos.map(descricaoAnexo))} —
+                    e cada uma tem uma alíquota própria dentro do Simples Nacional. Sobre o que você
+                    faturou nesta competência ({brl(e.rpa)}), a alíquota efetiva média ficou em{" "}
+                    <strong>{pct(aliquotaEfetivaMedia)}</strong>, e o DAS soma o valor calculado em
+                    cada uma.
+                  </p>
+
+                  <div className="pan-itens">
+                    {e.anexos.map((a, i) => (
+                      <div key={i}>
+                        <div><strong>{a.nome}</strong><span>receita {brl(a.receitaTributada)} · alíquota efetiva {pct(a.aliquotaEfetiva)}</span></div>
+                        <b>{brl(a.subtotal)}</b>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="medidor">
+                    <div className="medidor-linha"><span>Alíquota nominal média (ponderada)</span><b className="apagado">{pct(aliquotaNominalMedia, 2)}</b></div>
+                    <div className="medidor-barra">
+                      <div className="medidor-preenchido" style={{ width: `${(aliquotaEfetivaMedia / aliquotaNominalMedia) * 100}%` }} />
+                    </div>
+                    <div className="medidor-linha"><span>O que você paga de fato (efetiva média)</span><b>{pct(aliquotaEfetivaMedia)}</b></div>
+                  </div>
+
+                  <h5 className="sub">Para onde vai cada real</h5>
+                  <div className="tributos">
+                    {tributosConsolidados.map((t, i) => {
+                      const abertoTrib = tribAberto === i;
+                      const largura = (t.valor / g.valor) * 100;
+                      return (
+                        <button key={i} className={"trib" + (abertoTrib ? " aberto" : "")}
+                                onClick={() => setTribAberto(abertoTrib ? null : i)}>
+                          <div className="trib-linha1">
+                            <span className="trib-nome">{t.nome}</span>
+                            {t.situacao === "Redução" && <span className="chip-reducao">redução</span>}
+                            <span className="trib-valor">{brl(t.valor)}</span>
+                          </div>
+                          <div className="trib-barra-fundo"><div className="trib-barra" style={{ width: `${largura}%` }} /></div>
+                          {abertoTrib && (
+                            <div className="trib-detalhe">
+                              {t.porAnexo.map((p, j) => (
+                                <div key={j}><span>{p.anexo}</span><b>{brl(p.valor)}</b></div>
+                              ))}
+                            </div>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </>
               )}
 
               <button className="btn-fantasma largo" onClick={() => setHistAberto(!histAberto)}>
@@ -826,7 +1288,8 @@ const CSS = `
 .vazio{font-size:13.5px;color:var(--suave);text-align:center;padding:34px 18px;line-height:1.6}
 
 h2,h3,h4,h5{font-family:'Instrument Sans',sans-serif;letter-spacing:-.01em}
-.numero,.guia-valor strong,.emp-num b,.pan-numeros b{font-family:'Bodoni Moda',Georgia,serif;font-variant-numeric:tabular-nums;letter-spacing:0}
+.numero,.guia-valor strong,.emp-num b,.pan-numeros b,.carga-pct{font-family:'Bodoni Moda',Georgia,serif;font-variant-numeric:tabular-nums;letter-spacing:0}
+.carga-pct{font-size:28px;font-weight:600;line-height:1.05}
 .etiqueta,.rotulo,.secao,.sub{font-family:'Jost',sans-serif;font-weight:400;letter-spacing:.2em;text-transform:lowercase;font-size:10.5px}
 
 .login{flex:1;display:flex;flex-direction:column;justify-content:center;gap:34px;padding:32px 26px;
@@ -895,6 +1358,7 @@ h2,h3,h4,h5{font-family:'Instrument Sans',sans-serif;letter-spacing:-.01em}
 .pan-itens span{font-size:11.5px;color:var(--suave)}
 .pan-itens b{font-variant-numeric:tabular-nums;font-size:14px;flex:none}
 .pan-alerta{font-size:12.5px;color:#8A6516;background:#FBF4E6;border-radius:10px;padding:11px 13px;line-height:1.55}
+.pan-alerta.alerta{color:var(--rubro);background:#FBE9E7}
 .pan-escopo{font-size:11.5px;color:var(--suave);line-height:1.5}
 
 .linha{background:#fff;border:1px solid var(--linha);border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:13px;
@@ -926,7 +1390,7 @@ h2,h3,h4,h5{font-family:'Instrument Sans',sans-serif;letter-spacing:-.01em}
   font-weight:600;color:var(--suave);cursor:pointer}
 .segmentado button.on{background:#fff;color:var(--tinta);box-shadow:0 1px 3px rgba(0,0,0,.09)}
 
-.guia{background:#fff;border:1px solid var(--linha);border-radius:14px;padding:15px;display:flex;flex-direction:column;
+article.guia{background:#fff;border:1px solid var(--linha);border-radius:14px;padding:15px;display:flex;flex-direction:column;
   gap:11px;border-left:4px solid var(--linha)}
 .guia.normal{border-left-color:var(--tinta)}
 .guia.atencao{border-left-color:var(--ambar)}
@@ -967,12 +1431,12 @@ h2,h3,h4,h5{font-family:'Instrument Sans',sans-serif;letter-spacing:-.01em}
 .doc span{font-size:12px;color:var(--suave)}
 .baixar{font-size:17px;flex:none}
 
-.calendario{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;background:#fff;border:1px solid var(--linha);
+.calendario{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:2px;background:#fff;border:1px solid var(--linha);
   border-radius:14px;padding:9px 6px}
 .calendario .cab{text-align:center;font-family:'Jost',sans-serif;font-size:9px;letter-spacing:.1em;color:var(--suave);padding-bottom:3px}
 .cel{aspect-ratio:1/0.8;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;font-size:11px;
   border-radius:7px;font-variant-numeric:tabular-nums;border:0;background:none;font:inherit;color:inherit;
-  cursor:default;padding:0;width:100%}
+  cursor:default;padding:0;width:100%;min-width:0}
 .cel:disabled{cursor:default}
 .cel.tem{font-weight:600;cursor:pointer}
 .cel.tem.guia{background:#ECEBE7}
@@ -1053,8 +1517,12 @@ h2,h3,h4,h5{font-family:'Instrument Sans',sans-serif;letter-spacing:-.01em}
 .medidor-linha{display:flex;justify-content:space-between;font-size:11.5px;color:var(--suave)}
 .medidor-linha b{font-size:13px;color:var(--tinta);font-weight:600}
 .medidor-linha b.apagado{color:var(--suave);text-decoration:line-through;font-weight:500}
-.medidor-barra{height:7px;background:#E4E3DF;border-radius:5px;overflow:hidden;margin:2px 0}
+.medidor-barra{height:7px;background:#E4E3DF;border-radius:5px;overflow:hidden;margin:2px 0;position:relative}
 .medidor-preenchido{height:100%;background:var(--tinta);border-radius:5px}
+.limite-marcador{position:absolute;top:0;bottom:0;width:2px;background:#fff;box-shadow:0 0 0 1px var(--tinta);transform:translateX(-50%)}
+.limite.atencao .medidor-preenchido{background:var(--ambar)}
+.limite.alerta .medidor-preenchido{background:var(--rubro)}
+.parc-legenda{display:flex;justify-content:space-between;font-size:11.5px;color:var(--suave)}
 .tributos{display:flex;flex-direction:column;gap:6px}
 .trib{background:#fff;border:1px solid transparent;border-radius:10px;padding:10px 12px;font:inherit;text-align:left;
   cursor:pointer;width:100%;display:flex;flex-direction:column;gap:6px}
@@ -1076,8 +1544,11 @@ h2,h3,h4,h5{font-family:'Instrument Sans',sans-serif;letter-spacing:-.01em}
 .alerta-tendencia p{font-size:12px;color:#8A6516;line-height:1.55}
 .historico{display:flex;flex-direction:column;gap:8px}
 .historico-grafico{display:flex;align-items:flex-end;gap:3px;height:70px;padding:0 2px}
-.historico-coluna{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:4px;height:100%}
+.historico-coluna{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:4px;height:100%;
+  background:none;border:0;padding:0;font:inherit;cursor:pointer}
 .historico-barra{width:100%;background:var(--tinta);border-radius:3px 3px 0 0;min-height:3px}
+.historico-coluna.atual .historico-barra{background:var(--verde)}
+.historico-coluna.atual span{color:var(--verde);font-weight:600}
 .historico-coluna span{font-family:'Jost',sans-serif;font-size:8.5px;letter-spacing:.05em;color:var(--suave)}
 .historico-legenda{font-size:11.5px;color:var(--suave)}
 .historico-faixa{font-size:11.5px;color:var(--suave);padding-top:7px;border-top:1px dashed var(--linha)}
