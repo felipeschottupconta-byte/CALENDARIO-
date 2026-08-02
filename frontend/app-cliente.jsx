@@ -329,6 +329,8 @@ const descricaoAnexo = (nome) => {
   const [num, ...resto] = nome.split(" - ");
   return resto.length ? `${resto.join(" - ")} (${num})` : nome;
 };
+// "Anexo I - Comércio" -> "Comércio" — rótulo curto pra aba/botão do seletor de anexo.
+const rotuloAnexo = (nome) => nome.split(" - ")[1] || nome;
 const juntarLista = (arr) => arr.length <= 1 ? (arr[0] || "") : arr.slice(0, -1).join(", ") + " e " + arr[arr.length - 1];
 
 // As 6 faixas de RBT12 do Simples Nacional têm a mesma faixa em R$ nos
@@ -923,6 +925,7 @@ function CardGuia({ g, emp, avisar, marcarPaga }) {
   const [aberto, setAberto] = useState(false);
   const [entenda, setEntenda] = useState(false);
   const [tribAberto, setTribAberto] = useState(null);
+  const [abaAnexo, setAbaAnexo] = useState(null);
   const [histAberto, setHistAberto] = useState(false);
   const [recalculo, setRecalculo] = useState(false);
   const [pagando, setPagando] = useState(false);
@@ -1194,6 +1197,39 @@ function CardGuia({ g, emp, avisar, marcarPaga }) {
                       );
                     })}
                   </div>
+
+                  <h5 className="sub">Ver por anexo</h5>
+                  <div className="segmentado">
+                    {e.anexos.map((a, i) => (
+                      <button key={i} className={abaAnexo === i ? "on" : ""}
+                              onClick={() => setAbaAnexo(abaAnexo === i ? null : i)}>
+                        {rotuloAnexo(a.nome)}
+                      </button>
+                    ))}
+                  </div>
+
+                  {abaAnexo != null && e.anexos[abaAnexo] && (
+                    <div className="anexo-detalhe">
+                      <p className="fino">
+                        Receita tributada: <b>{brl(e.anexos[abaAnexo].receitaTributada)}</b> · Alíquota efetiva:{" "}
+                        <b>{pct(e.anexos[abaAnexo].aliquotaEfetiva)}</b>
+                      </p>
+                      <div className="anexo-trib-cab">
+                        <span>Tributo</span><span>Base de cálculo</span><span>Alíquota</span><span>Valor</span>
+                      </div>
+                      {e.anexos[abaAnexo].tributos.map((t, i) => (
+                        <div key={i} className="anexo-trib-linha">
+                          <span className="anexo-trib-nome">
+                            {t.nome}
+                            {t.situacao === "Redução" && <span className="chip-reducao">redução</span>}
+                          </span>
+                          <span>{brl(t.baseCalculo)}</span>
+                          <span>{pct(t.aliquota, 4)}</span>
+                          <span>{brl(t.valor)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </>
               )}
 
@@ -1686,6 +1722,14 @@ article.guia{background:#fff;border:1px solid var(--linha);border-radius:14px;pa
 .trib-detalhe span{color:var(--suave)}
 .trib-detalhe b{font-weight:600}
 .trib-nota{font-size:11.5px;color:var(--suave);line-height:1.55;margin-top:2px}
+.anexo-detalhe{display:flex;flex-direction:column;gap:2px;background:#fff;border-radius:11px;padding:12px 13px;border:1px solid var(--linha)}
+.anexo-detalhe>.fino{margin-bottom:8px}
+.anexo-trib-cab,.anexo-trib-linha{display:grid;grid-template-columns:1.3fr 1fr .8fr 1fr;gap:6px;align-items:center}
+.anexo-trib-cab{font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--suave);padding-bottom:6px;border-bottom:1px solid var(--linha)}
+.anexo-trib-cab span:not(:first-child),.anexo-trib-linha span:not(.anexo-trib-nome){text-align:right;font-variant-numeric:tabular-nums}
+.anexo-trib-linha{padding:8px 0;border-bottom:1px solid #F1F0ED;font-size:12px}
+.anexo-trib-linha:last-child{border:0}
+.anexo-trib-nome{display:flex;align-items:center;gap:6px;font-weight:600}
 .alerta-tendencia{display:flex;gap:10px;background:#FBF4E6;border-radius:11px;padding:12px 13px}
 .seta-tendencia{font-size:17px;color:var(--ambar);flex:none;font-weight:700}
 .alerta-tendencia strong{font-size:13px;font-weight:700;display:block;color:#7A5510;margin-bottom:3px}
