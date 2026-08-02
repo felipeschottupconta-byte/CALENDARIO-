@@ -605,6 +605,16 @@ function Inicio({ emp, ir, avisar, pagas }) {
 
   return (
     <div className="pilha">
+      {aliquota && (
+        <section className="panorama">
+          <div>
+            <span className="etiqueta">Alíquota efetiva{aliquota.media ? " média" : ""} · {aliquota.comp}</span>
+            <p className="carga-pct">{pct(aliquota.valor)}</p>
+            <p className="fino">o que sua empresa pagou de fato sobre o faturamento do mês</p>
+          </div>
+        </section>
+      )}
+
       <section className="destaque">
         <p className="rotulo">A pagar em {MESES_LONGOS[+mesAtual.slice(5, 7) - 1]}</p>
         <p className="numero">{total > 0 ? brl(total) : "Nada em aberto"}</p>
@@ -617,11 +627,6 @@ function Inicio({ emp, ir, avisar, pagas }) {
             + {brl(porMesFuturo[chave])} vencendo em {MESES_LONGOS[+chave.slice(5, 7) - 1]}
           </p>
         ))}
-        {aliquota && (
-          <p className="nota">
-            alíquota efetiva{aliquota.media ? " média" : ""} de {aliquota.comp}: {pct(aliquota.valor)}
-          </p>
-        )}
         {total > 0 && <button className="btn-claro" onClick={() => ir("guias")}>Ver guias</button>}
       </section>
 

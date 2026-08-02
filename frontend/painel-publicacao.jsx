@@ -507,7 +507,7 @@ function AreaUploadExtrato({ empresas, guias, avisar, aoTerminar }) {
     setProcessando(true);
     setProgresso(arquivos.map((f) => ({ arquivo: f.name, situacao: "processando", detalhe: "" })));
 
-    let gravadas = 0, revisao = 0, duplicadas = 0;
+    let gravadas = 0, revisao = 0, substituidas = 0, puladas = 0;
 
     for (let i = 0; i < arquivos.length; i++) {
       const arquivo = arquivos[i];
@@ -527,14 +527,6 @@ function AreaUploadExtrato({ empresas, guias, avisar, aoTerminar }) {
           continue;
         }
 
-        const { data: existente } = await supabase
-          .from("apuracoes_simples").select("id").eq("arquivo_hash", dados.arquivo_hash).maybeSingle();
-        if (existente) {
-          duplicadas++;
-          atualizar({ situacao: "duplicada", detalhe: "arquivo já processado" });
-          continue;
-        }
-
         const ident = dados.identificacao || {};
         const empresa = ident.empresa_id ? empresas.find((e) => e.id === ident.empresa_id) : null;
 
@@ -545,6 +537,31 @@ function AreaUploadExtrato({ empresas, guias, avisar, aoTerminar }) {
             : (ident.motivos || []).join(" · ") || "CNPJ não cadastrado no sistema — cadastre a empresa e suba de novo";
           atualizar({ situacao: "revisao", detalhe: motivo });
           continue;
+        }
+
+        // reenvio da mesma competência substitui o extrato antigo (não gera
+        // duplicata nem segunda linha) — apaga a apuração velha, que arrasta
+        // junto anexos/tributos/histórico em cascata, e grava a nova por
+        // cima. Pede confirmação antes, porque é destrutivo.
+        const { data: existente } = await supabase
+          .from("apuracoes_simples").select("id")
+          .eq("empresa_id", empresa.id).eq("competencia", dados.competencia).maybeSingle();
+        if (existente) {
+          const nomeEmpresa = empresa.nome_fantasia || empresa.razao_social;
+          const substituir = window.confirm(
+            `Já existe um extrato de ${dados.competencia} para ${nomeEmpresa} — substituir pelos dados deste novo arquivo?`
+          );
+          if (!substituir) {
+            puladas++;
+            atualizar({ situacao: "revisao", detalhe: "não substituído — já existia extrato dessa competência" });
+            continue;
+          }
+          const { error: erroDelete } = await supabase.from("apuracoes_simples").delete().eq("id", existente.id);
+          if (erroDelete) {
+            atualizar({ situacao: "erro", detalhe: "falha ao substituir o extrato antigo: " + erroDelete.message });
+            continue;
+          }
+          substituidas++;
         }
 
         // linka no DAS da mesma competência, se já existir — só facilita
@@ -657,7 +674,7 @@ function AreaUploadExtrato({ empresas, guias, avisar, aoTerminar }) {
     }
 
     setProcessando(false);
-    avisar(`${gravadas} extrato${gravadas === 1 ? "" : "s"} gravado${gravadas === 1 ? "" : "s"}, ${revisao} em revisão, ${duplicadas} duplicado${duplicadas === 1 ? "" : "s"}`);
+    avisar(`${gravadas} extrato${gravadas === 1 ? "" : "s"} gravado${gravadas === 1 ? "" : "s"} (${substituidas} substituindo antigo), ${revisao} em revisão, ${puladas} não substituído${puladas === 1 ? "" : "s"}`);
     await aoTerminar();
   };
 
