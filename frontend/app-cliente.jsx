@@ -330,8 +330,27 @@ const descricaoAnexo = (nome) => {
   const [num, ...resto] = nome.split(" - ");
   return resto.length ? `${resto.join(" - ")} (${num})` : nome;
 };
-// "Anexo I - Comércio" -> "Comércio" — rótulo curto pra aba/botão do seletor de anexo.
-const rotuloAnexo = (nome) => nome.split(" - ")[1] || nome;
+// "Anexo I - Comércio" -> "Comércio" — rótulo curto pra aba/botão do
+// seletor de anexo. Corta citação legal entre parênteses quando existe
+// (ex.: "Locação de Bens Móveis (não relacionados no §5º-C...)").
+const rotuloAnexo = (nome) => (nome.split(" - ")[1] || nome).split(" (")[0].trim();
+
+// Duas "linhas" de apuração podem vir com o mesmo nome de anexo (mesma
+// receita tributada em seções/tabelas diferentes, ex.: com e sem
+// substituição tributária) — sem isso, os botões do seletor ficariam
+// com rótulo repetido e indistinguível.
+const rotulosAnexoDesambiguados = (anexos) => {
+  const vistos = {};
+  return anexos.map((a) => {
+    const base = rotuloAnexo(a.nome);
+    vistos[base] = (vistos[base] || 0) + 1;
+    return vistos[base];
+  }).map((n, i) => {
+    const base = rotuloAnexo(anexos[i].nome);
+    const total = anexos.filter((a) => rotuloAnexo(a.nome) === base).length;
+    return total > 1 ? `${base} ${n}` : base;
+  });
+};
 const juntarLista = (arr) => arr.length <= 1 ? (arr[0] || "") : arr.slice(0, -1).join(", ") + " e " + arr[arr.length - 1];
 
 // As 6 faixas de RBT12 do Simples Nacional têm a mesma faixa em R$ nos
@@ -1231,10 +1250,10 @@ function CardGuia({ g, emp, avisar, marcarPaga }) {
 
                   <h5 className="sub">Ver por anexo</h5>
                   <div className="segmentado">
-                    {e.anexos.map((a, i) => (
+                    {rotulosAnexoDesambiguados(e.anexos).map((rotulo, i) => (
                       <button key={i} className={abaAnexo === i ? "on" : ""}
                               onClick={() => setAbaAnexo(abaAnexo === i ? null : i)}>
-                        {rotuloAnexo(a.nome)}
+                        {rotulo}
                       </button>
                     ))}
                   </div>
@@ -1599,8 +1618,8 @@ h2,h3,h4,h5{font-family:'Instrument Sans',sans-serif;letter-spacing:-.01em}
 .atalhos span{font-size:12.5px;color:var(--suave)}
 
 .segmentado{display:flex;background:#E6E5E2;border-radius:11px;padding:3px;gap:3px}
-.segmentado button{flex:1;border:0;background:none;padding:9px;border-radius:9px;font:inherit;font-size:14px;
-  font-weight:600;color:var(--suave);cursor:pointer}
+.segmentado button{flex:1;min-width:0;border:0;background:none;padding:9px 6px;border-radius:9px;font:inherit;font-size:13px;
+  font-weight:600;color:var(--suave);cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .segmentado button.on{background:#fff;color:var(--tinta);box-shadow:0 1px 3px rgba(0,0,0,.09)}
 
 article.guia{background:#fff;border:1px solid var(--linha);border-radius:14px;padding:15px;display:flex;flex-direction:column;
