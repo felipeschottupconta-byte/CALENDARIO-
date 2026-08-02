@@ -416,7 +416,7 @@ function AreaUpload({ empresas, avisar, aoTerminar }) {
         const ano = dados.vencimento ? dados.vencimento.slice(0, 4) : new Date().getFullYear();
         const caminhoStorage = `guias/${dados.cnpj}/${ano}/${dados.arquivo_hash}.pdf`;
         const { error: erroUpload } = await supabase.storage.from("guias").upload(caminhoStorage, arquivo, {
-          contentType: "application/pdf", upsert: false,
+          contentType: "application/pdf", upsert: true, // caminho já inclui o hash do conteúdo — reenviar o mesmo arquivo nunca sobrescreve outro
         });
         if (erroUpload) {
           atualizar({ situacao: "erro", detalhe: "falha no upload: " + erroUpload.message });
@@ -555,7 +555,7 @@ function AreaUploadExtrato({ empresas, guias, avisar, aoTerminar }) {
         const ano = dados.competencia ? dados.competencia.slice(3, 7) : String(new Date().getFullYear());
         const caminhoStorage = `extratos/${dados.cnpj}/${ano}/${dados.arquivo_hash}.pdf`;
         const { error: erroUpload } = await supabase.storage.from("guias").upload(caminhoStorage, arquivo, {
-          contentType: "application/pdf", upsert: false,
+          contentType: "application/pdf", upsert: true, // caminho já inclui o hash do conteúdo — reenviar o mesmo arquivo nunca sobrescreve outro
         });
         if (erroUpload) {
           atualizar({ situacao: "erro", detalhe: "falha no upload: " + erroUpload.message });

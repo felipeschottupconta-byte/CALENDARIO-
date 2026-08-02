@@ -103,7 +103,10 @@ def _parsear(endpoint, caminho_pdf, empresas):
 
 
 def _subir_storage(caminho_storage, pdf_bytes, token):
-    headers = {"apikey": SUPABASE_ANON_KEY, "Authorization": f"Bearer {token}", "Content-Type": "application/pdf"}
+    # x-upsert: caminho já inclui o hash do conteúdo — reenviar o mesmo
+    # arquivo nunca sobrescreve outro, só evita travar numa reexecução
+    headers = {"apikey": SUPABASE_ANON_KEY, "Authorization": f"Bearer {token}",
+               "Content-Type": "application/pdf", "x-upsert": "true"}
     req = urllib.request.Request(f"{SUPABASE_URL}/storage/v1/object/guias/{caminho_storage}",
                                   data=pdf_bytes, headers=headers, method="POST")
     try:
