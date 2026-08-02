@@ -1113,7 +1113,7 @@ function CardGuia({ g, emp, avisar, marcarPaga }) {
               ) : (
                 <>
                   <p className="explicacao">
-                    Sua empresa fatura em mais de uma frente — {juntarLista(e.anexos.map(descricaoAnexo))} —
+                    Sua empresa fatura em mais de uma frente — {juntarLista(e.anexos.map((a) => descricaoAnexo(a.nome)))} —
                     e cada uma tem uma alíquota própria dentro do Simples Nacional. Sobre o que você
                     faturou nesta competência ({brl(e.rpa)}), a alíquota efetiva média ficou em{" "}
                     <strong>{pct(aliquotaEfetivaMedia)}</strong>, e o DAS soma o valor calculado em
