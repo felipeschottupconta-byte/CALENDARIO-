@@ -348,7 +348,9 @@ const rotulosAnexoDesambiguados = (anexos) => {
   }).map((n, i) => {
     const base = rotuloAnexo(anexos[i].nome);
     const total = anexos.filter((a) => rotuloAnexo(a.nome) === base).length;
-    return total > 1 ? `${base} ${n}` : base;
+    // número primeiro — texto trunca com reticências à direita numa aba
+    // estreita, então é o número que precisa sobreviver ao corte
+    return total > 1 ? `${n} · ${base}` : base;
   });
 };
 const juntarLista = (arr) => arr.length <= 1 ? (arr[0] || "") : arr.slice(0, -1).join(", ") + " e " + arr[arr.length - 1];
@@ -1260,6 +1262,7 @@ function CardGuia({ g, emp, avisar, marcarPaga }) {
 
                   {abaAnexo != null && e.anexos[abaAnexo] && (
                     <div className="anexo-detalhe">
+                      <p className="anexo-nome-completo">{descricaoAnexo(e.anexos[abaAnexo].nome)}</p>
                       <p className="fino">
                         Receita tributada: <b>{brl(e.anexos[abaAnexo].receitaTributada)}</b> · Alíquota efetiva:{" "}
                         <b>{pct(e.anexos[abaAnexo].aliquotaEfetiva)}</b>
@@ -1774,6 +1777,7 @@ article.guia{background:#fff;border:1px solid var(--linha);border-radius:14px;pa
 .trib-detalhe b{font-weight:600}
 .trib-nota{font-size:11.5px;color:var(--suave);line-height:1.55;margin-top:2px}
 .anexo-detalhe{display:flex;flex-direction:column;gap:10px;background:#fff;border-radius:11px;padding:12px 13px;border:1px solid var(--linha)}
+.anexo-nome-completo{font-size:13px;font-weight:600;line-height:1.4;padding-bottom:8px;border-bottom:1px solid #F1F0ED}
 .anexo-tributos{display:flex;flex-direction:column;gap:10px}
 .anexo-trib-card{padding-top:10px;border-top:1px solid #F1F0ED}
 .anexo-trib-card:first-child{padding-top:0;border-top:0}
