@@ -19,11 +19,17 @@ ordem, no SQL Editor:
 sql/03-parcelamentos.sql
 sql/04-carga-tributaria.sql
 sql/05-limites-simples.sql
+sql/06-rls-guia-eventos-staff.sql
 ```
 
-Sem elas: o card de parcelamento, o de carga tributária e o de sublimite
-do Simples simplesmente não aparecem no app (o código já trata a
-ausência de dado com elegância — não quebra, só não mostra).
+Sem as três primeiras: o card de parcelamento, o de carga tributária e o
+de sublimite do Simples simplesmente não aparecem no app (o código já
+trata a ausência de dado com elegância — não quebra, só não mostra).
+
+Sem a `06`: publicar uma guia pelo painel dá **403** ao tentar gravar o
+evento de auditoria (`guia_eventos`), porque a política original só
+previa o cliente registrando vista/baixada — nunca o escritório
+registrando publicação. Descoberto testando o ciclo completo ao vivo.
 
 ---
 

@@ -224,9 +224,11 @@ function PainelPrincipal({ perfil, sair }) {
     const n = ids.length;
     const { error } = await supabase.from("guias").update({ status: "publicada" }).in("id", ids);
     if (error) { avisar("Falha ao publicar: " + error.message); return; }
-    await Promise.all(ids.map((id) =>
+    const resultados = await Promise.all(ids.map((id) =>
       supabase.from("guia_eventos").insert({ guia_id: id, tipo: "publicada", usuario_id: perfil.id })
     ));
+    const falhas = resultados.filter((r) => r.error);
+    if (falhas.length) console.error(`${falhas.length} evento(s) 'publicada' não gravados:`, falhas[0].error.message);
     setSel(new Set());
     await recarregarGuias();
     avisar(`${n} ${n === 1 ? "guia publicada" : "guias publicadas"} — clientes notificados`);
@@ -313,7 +315,10 @@ function PainelPrincipal({ perfil, sair }) {
         <AbaEmpresas empresas={empresas} avisar={avisar} aoCadastrar={recarregarEmpresas} />
       )}
 
-      {aberta && <Detalhe g={aberta} onFechar={() => setAberta(null)} avisar={avisar} />}
+      {aberta && (
+        <Detalhe g={aberta} onFechar={() => setAberta(null)} avisar={avisar}
+          perfil={perfil} aoAtualizar={recarregarGuias} />
+      )}
       {toast && <div className="toast">{toast}</div>}
     </div>
   );
@@ -599,31 +604,42 @@ function Detalhe({ g, onFechar, avisar, perfil, aoAtualizar }) {
 
   const salvarELiberar = async () => {
     setSalvando(true);
-    const valorNum = typeof ed.valor === "string" ? parseFloat(ed.valor.replace(",", ".")) : ed.valor;
-    const { error } = await supabase.from("guias").update({
-      competencia: ed.competencia || null,
-      vencimento: ed.vencimento || null,
-      valor: Number.isNaN(valorNum) ? null : valorNum,
-      status: "processando",
-      revisado_por: perfil.id,
-      revisado_em: new Date().toISOString(),
-    }).eq("id", g.id);
-    setSalvando(false);
-    if (error) { avisar("Falha ao salvar: " + error.message); return; }
-    avisar("Correção salva — guia movida para prontas");
-    await aoAtualizar();
-    onFechar();
+    try {
+      const valorNum = typeof ed.valor === "string" ? parseFloat(ed.valor.replace(",", ".")) : ed.valor;
+      const { error } = await supabase.from("guias").update({
+        competencia: ed.competencia || null,
+        vencimento: ed.vencimento || null,
+        valor: Number.isNaN(valorNum) ? null : valorNum,
+        status: "processando",
+        revisado_por: perfil?.id,
+        revisado_em: new Date().toISOString(),
+      }).eq("id", g.id);
+      if (error) { avisar("Falha ao salvar: " + error.message); return; }
+      avisar("Correção salva — guia movida para prontas");
+      await aoAtualizar();
+      onFechar();
+    } catch (e) {
+      avisar("Erro inesperado ao salvar: " + (e.message || e));
+    } finally {
+      setSalvando(false);
+    }
   };
 
   const publicarUma = async () => {
     setSalvando(true);
-    const { error } = await supabase.from("guias").update({ status: "publicada" }).eq("id", g.id);
-    if (!error) await supabase.from("guia_eventos").insert({ guia_id: g.id, tipo: "publicada", usuario_id: perfil.id });
-    setSalvando(false);
-    if (error) { avisar("Falha ao publicar: " + error.message); return; }
-    avisar("Guia publicada — cliente notificado");
-    await aoAtualizar();
-    onFechar();
+    try {
+      const { error } = await supabase.from("guias").update({ status: "publicada" }).eq("id", g.id);
+      if (error) { avisar("Falha ao publicar: " + error.message); return; }
+      const { error: erroEvento } = await supabase.from("guia_eventos").insert({ guia_id: g.id, tipo: "publicada", usuario_id: perfil?.id });
+      if (erroEvento) console.error("Falha ao registrar evento 'publicada':", erroEvento.message);
+      avisar("Guia publicada — cliente notificado");
+      await aoAtualizar();
+      onFechar();
+    } catch (e) {
+      avisar("Erro inesperado ao publicar: " + (e.message || e));
+    } finally {
+      setSalvando(false);
+    }
   };
 
   return (
