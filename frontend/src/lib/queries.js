@@ -104,6 +104,7 @@ export async function carregarGuiasDaEmpresa(empresaId) {
       novo: !g.vista_em,
       status: g.status,
       pagaEm: g.paga_em,
+      storagePath: g.storage_path,
     };
 
     if (g.eh_parcelamento) {
@@ -257,6 +258,17 @@ export async function registrarEvento(guiaId, tipo, meta = null) {
   } catch {
     // silencioso de propósito — ver comentário acima
   }
+}
+
+// URL assinada de 60s pro PDF original da guia — a RLS de storage.objects
+// (sql/11) só libera pro cliente ler dentro de guias/{cnpj da própria
+// empresa}/..., nunca de outra. Erro aqui deve interromper o clique
+// (diferente de registrarEvento), senão o botão "PDF" parece funcionar
+// e não abre nada.
+export async function baixarPdfGuia(storagePath) {
+  const { data, error } = await supabase.storage.from("guias").createSignedUrl(storagePath, 60);
+  if (error) throw error;
+  return data.signedUrl;
 }
 
 function numero(v) {

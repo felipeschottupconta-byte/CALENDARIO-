@@ -7,6 +7,7 @@ import {
   carregarLimiteSimples,
   registrarEvento,
   marcarGuiaComoPaga,
+  baixarPdfGuia,
 } from "./src/lib/queries.js";
 
 /* ============================================================
@@ -932,6 +933,34 @@ function CardGuia({ g, emp, avisar, marcarPaga }) {
   const [arquivo, setArquivo] = useState(null);
   const [dataPagamento, setDataPagamento] = useState(HOJE);
   const [enviandoPagamento, setEnviandoPagamento] = useState(false);
+  const [baixandoPdf, setBaixandoPdf] = useState(false);
+
+  const abrirPdf = async () => {
+    if (!g.storagePath) { avisar("PDF original não disponível pra esta guia"); return; }
+    setBaixandoPdf(true);
+    try {
+      const url = await baixarPdfGuia(g.storagePath);
+      // URL assinada é de outro domínio (Storage do Supabase) — o atributo
+      // "download" do <a> é ignorado em link cross-origin, só funciona com
+      // blob: same-origin. Por isso baixa o conteúdo primeiro.
+      const resp = await fetch(url);
+      if (!resp.ok) throw new Error("falha ao baixar o arquivo");
+      const blob = await resp.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = `${g.tipo || "guia"}-${g.venc || ""}.pdf`.replace(/\s+/g, "_");
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(blobUrl);
+      registrarEvento(g.id, "baixada");
+    } catch (e) {
+      avisar("Não consegui baixar o PDF agora — tenta de novo em instantes");
+    } finally {
+      setBaixandoPdf(false);
+    }
+  };
   const n = dias(g.venc);
   const cor = n < 0 ? "atraso" : n <= 5 ? "atencao" : "normal";
   const e = g.entenda;
@@ -1000,7 +1029,9 @@ function CardGuia({ g, emp, avisar, marcarPaga }) {
               <code>{g.linha}</code>
               <div className="dupla">
                 <button className="btn-primario pequeno" onClick={() => { avisar("Código copiado"); registrarEvento(g.id, "baixada"); }}>Copiar código</button>
-                <button className="btn-secundario pequeno" onClick={() => { avisar("Baixando guia em PDF"); registrarEvento(g.id, "baixada"); }}>PDF</button>
+                <button className="btn-secundario pequeno" disabled={baixandoPdf} onClick={abrirPdf}>
+                  {baixandoPdf ? "Baixando…" : "Baixar PDF"}
+                </button>
               </div>
             </div>
           )}
