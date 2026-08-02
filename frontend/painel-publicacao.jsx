@@ -594,6 +594,8 @@ function AreaUploadExtrato({ empresas, guias, avisar, aoTerminar }) {
           aliquota_efetiva: anexoUnico ? anexoUnico.aliquota_efetiva : dados.aliquota_efetiva_media,
           parcela_deduzir: anexoUnico ? anexoUnico.parcela_deduzir : null,
           total_a_recolher: dados.total_a_recolher,
+          fator_r: dados.fator_r ?? null,
+          folha_12_meses: dados.folha_12_meses ?? null,
           storage_path: caminhoStorage,
           arquivo_hash: dados.arquivo_hash,
           publicada: false,

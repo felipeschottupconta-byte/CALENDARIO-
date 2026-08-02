@@ -137,6 +137,8 @@ export async function carregarGuiasDaEmpresa(empresaId) {
           rbt12: numero(apuracao.rbt12),
           faixaDe: numero(apuracao.faixa_de),
           faixaAte: numero(apuracao.faixa_ate),
+          fatorR: numero(apuracao.fator_r),
+          folha12Meses: numero(apuracao.folha_12_meses),
           anexos: anexos.map((a) => ({
             nome: a.anexo,
             receitaTributada: numero(a.receita_tributada),
@@ -160,6 +162,8 @@ export async function carregarGuiasDaEmpresa(empresaId) {
           faixaAte: numero(apuracao.faixa_ate),
           aliquotaNominal: numero(apuracao.aliquota_nominal),
           aliquotaEfetiva: numero(apuracao.aliquota_efetiva),
+          fatorR: numero(apuracao.fator_r),
+          folha12Meses: numero(apuracao.folha_12_meses),
           tributos: (apuracao.apuracao_tributos || []).map((t) => ({
             nome: t.nome, situacao: t.situacao,
             aliquota: numero(t.aliquota), valor: numero(t.valor),

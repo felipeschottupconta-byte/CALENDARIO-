@@ -1287,6 +1287,8 @@ function CardGuia({ g, emp, avisar, marcarPaga }) {
                 </>
               )}
 
+              {e.fatorR != null && <FatorR fatorR={e.fatorR} folha={e.folha12Meses} />}
+
               <button className="btn-fantasma largo" onClick={() => setHistAberto(!histAberto)}>
                 {histAberto ? "Ocultar histórico de receita" : "Ver histórico de receita (12 meses)"}
               </button>
@@ -1309,6 +1311,52 @@ function CardGuia({ g, emp, avisar, marcarPaga }) {
         </>
       )}
     </article>
+  );
+}
+
+const CORTE_FATOR_R = 28; // % — abaixo disso, prestação de serviço cai do Anexo III pro Anexo V
+
+function FatorR({ fatorR, folha }) {
+  const margem = fatorR - CORTE_FATOR_R;
+  const dentroDoAnexoIII = margem >= 0;
+  const largura = Math.min(100, Math.max(0, fatorR));
+
+  return (
+    <div className="fator-r">
+      <h5 className="sub">Fator R</h5>
+      <p className="explicacao">
+        O Fator R é a proporção entre a folha de pagamento e o faturamento dos últimos 12 meses — é ele
+        que decide se sua empresa apura pelo Anexo III (alíquotas menores) ou pelo Anexo V (mais caro).
+        O corte é {CORTE_FATOR_R}%: igual ou acima disso, Anexo III; abaixo, Anexo V.
+      </p>
+
+      <div className="medidor">
+        <div className="medidor-linha"><span>Seu Fator R atual</span><b>{pct(fatorR, 2)}</b></div>
+        <div className="medidor-barra">
+          <div className="medidor-preenchido" style={{ width: `${largura}%` }} />
+          <div className="limite-marcador" style={{ left: `${CORTE_FATOR_R}%` }} title={`Corte de ${CORTE_FATOR_R}%`} />
+        </div>
+        <div className="medidor-linha"><span>Corte entre Anexo III e Anexo V</span><b className="apagado">{pct(CORTE_FATOR_R, 2)}</b></div>
+      </div>
+
+      {dentroDoAnexoIII && margem >= 3 && (
+        <p className="fino">{margem.toFixed(1).replace(".", ",")} pontos acima do limite — folga confortável.</p>
+      )}
+      {dentroDoAnexoIII && margem < 3 && (
+        <p className="pan-alerta">
+          {margem.toFixed(1).replace(".", ",")} pontos acima do limite — atenção: queda na folha ou
+          aumento na receita pode mudar seu anexo.
+        </p>
+      )}
+      {!dentroDoAnexoIII && (
+        <p className="pan-alerta alerta">
+          {Math.abs(margem).toFixed(1).replace(".", ",")} pontos abaixo do limite — sua empresa está
+          apurando pelo Anexo V nesta competência.
+        </p>
+      )}
+
+      {folha != null && <p className="fino">Folha de pagamento nos últimos 12 meses: {brl(folha)}</p>}
+    </div>
   );
 }
 
@@ -1750,6 +1798,7 @@ article.guia{background:#fff;border:1px solid var(--linha);border-radius:14px;pa
   border-radius:12px;padding:15px;margin-top:-3px}
 .explicacao{font-size:13px;line-height:1.62;color:#2A2A28}
 .explicacao strong{color:var(--tinta)}
+.fator-r{display:flex;flex-direction:column;gap:10px;padding-top:14px;border-top:1px dashed var(--linha)}
 .medidor{display:flex;flex-direction:column;gap:6px;background:#fff;border-radius:11px;padding:13px}
 .medidor-linha{display:flex;justify-content:space-between;font-size:11.5px;color:var(--suave)}
 .medidor-linha b{font-size:13px;color:var(--tinta);font-weight:600}

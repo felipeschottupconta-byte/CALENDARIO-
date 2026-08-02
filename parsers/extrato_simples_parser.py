@@ -80,6 +80,8 @@ class ExtratoSimples:
     faixa_de: Optional[Decimal] = None
     faixa_ate: Optional[Decimal] = None
     total_a_recolher: Optional[Decimal] = None
+    fator_r: Optional[Decimal] = None        # só existe pra quem apura por fator R (Anexo III/V)
+    folha_12_meses: Optional[Decimal] = None
     anexos: list[AnexoApurado] = field(default_factory=list)
     historico_rbt12: list[dict] = field(default_factory=list)  # 12 meses de receita
     alertas: list[str] = field(default_factory=list)
@@ -122,7 +124,7 @@ class ExtratoSimples:
 
     def to_dict(self) -> dict:
         d = asdict(self)
-        for campo in ("rpa", "rbt12", "faixa_de", "faixa_ate", "total_a_recolher"):
+        for campo in ("rpa", "rbt12", "faixa_de", "faixa_ate", "total_a_recolher", "fator_r", "folha_12_meses"):
             v = getattr(self, campo)
             d[campo] = str(v) if v is not None else None
 
@@ -302,6 +304,17 @@ def parse_extrato_simples(caminho: str | Path, valor_guia_das: Optional[Decimal]
     if m:
         e.faixa_de = valor_br(m.group(1))
         e.faixa_ate = valor_br(m.group(2))
+
+    # Só existe no extrato de quem apura pelo Fator R (prestação de
+    # serviço do Anexo III/V) — ausente pro resto das empresas, e isso
+    # não é motivo de alerta.
+    m = re.search(r"Fator r:\s*([\d,]+)", txt, re.IGNORECASE)
+    if m:
+        e.fator_r = Decimal(m.group(1).replace(",", "."))
+
+    m = re.search(r"Valor da Folha nos [uú]ltimos 12 meses:\s*([\d.,]+)", txt, re.IGNORECASE)
+    if m:
+        e.folha_12_meses = valor_br(m.group(1))
 
     # ------------------------------------------------------------
     # Seção de apuração ("SIMPLES NACIONAL"): um ou mais anexos, cada um
