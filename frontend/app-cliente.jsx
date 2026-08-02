@@ -319,6 +319,9 @@ const pct = (v, casas = 2) => v == null ? "—" : v.toLocaleString("pt-BR", { mi
 const dataBR = (iso) => iso.split("-").reverse().join("/");
 const dias = (iso) => Math.round((new Date(iso + "T00:00:00") - new Date(HOJE + "T00:00:00")) / 86400000);
 const MESES = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+// letra única — usado nos gráficos de 12 colunas, onde "jan"/"fev" não
+// cabe sem quebrar em tela estreita; toque na barra mostra o mês por extenso
+const MESES_LETRA = MESES.map((m) => m[0].toUpperCase());
 const MESES_LONGOS = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho",
   "agosto", "setembro", "outubro", "novembro", "dezembro"];
 const valorAbrev = (v) => v >= 1000
@@ -758,7 +761,7 @@ function CardCargaTributaria({ ct }) {
                   className={"historico-coluna" + (m.comp === atual ? " atual" : "")}
                   onClick={() => setSelecionado(selecionado === i ? null : i)}>
                   <div className="historico-barra" style={{ height: `${(m.cargaPercentual / maxCarga) * 100}%` }} />
-                  <span>{MESES[+m.comp.slice(0, 2) - 1]}</span>
+                  <span>{MESES_LETRA[+m.comp.slice(0, 2) - 1]}</span>
                 </button>
               ))}
             </div>
@@ -1301,7 +1304,7 @@ function CardGuia({ g, emp, avisar, marcarPaga }) {
                         className={"historico-coluna" + (histSelecionado === i ? " atual" : "")}
                         onClick={() => setHistSelecionado(histSelecionado === i ? null : i)}>
                         <div className="historico-barra" style={{ height: `${(h.receita / maxHist) * 100}%` }} />
-                        <span>{MESES[+h.comp.slice(0, 2) - 1]}</span>
+                        <span>{MESES_LETRA[+h.comp.slice(0, 2) - 1]}</span>
                       </button>
                     ))}
                   </div>
@@ -1848,13 +1851,13 @@ article.guia{background:#fff;border:1px solid var(--linha);border-radius:14px;pa
 .alerta-tendencia strong{font-size:13px;font-weight:700;display:block;color:#7A5510;margin-bottom:3px}
 .alerta-tendencia p{font-size:12px;color:#8A6516;line-height:1.55}
 .historico{display:flex;flex-direction:column;gap:8px}
-.historico-grafico{display:flex;align-items:flex-end;gap:3px;height:70px;padding:0 2px}
+.historico-grafico{display:flex;align-items:flex-end;gap:4px;height:70px;padding:0 2px}
 .historico-coluna{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:4px;height:100%;
   background:none;border:0;padding:0;font:inherit;cursor:pointer}
 .historico-barra{width:100%;background:var(--tinta);border-radius:3px 3px 0 0;min-height:3px}
 .historico-coluna.atual .historico-barra{background:var(--verde)}
 .historico-coluna.atual span{color:var(--verde);font-weight:600}
-.historico-coluna span{font-family:'Jost',sans-serif;font-size:8.5px;letter-spacing:0;color:var(--suave);
+.historico-coluna span{font-family:'Jost',sans-serif;font-size:10px;font-weight:600;letter-spacing:0;color:var(--suave);
   max-width:100%;overflow:hidden;text-overflow:clip;white-space:nowrap}
 .historico-legenda{font-size:11.5px;color:var(--suave)}
 .historico-faixa{font-size:11.5px;color:var(--suave);padding-top:7px;border-top:1px dashed var(--linha)}
