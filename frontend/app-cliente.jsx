@@ -314,7 +314,7 @@ const TIPOS_PEDIDO = [
 
 /* ---------- helpers ---------- */
 const brl = (v) => v == null ? "—" : v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-const pct = (v, casas = 2) => v.toLocaleString("pt-BR", { minimumFractionDigits: casas, maximumFractionDigits: casas }) + "%";
+const pct = (v, casas = 2) => v == null ? "—" : v.toLocaleString("pt-BR", { minimumFractionDigits: casas, maximumFractionDigits: casas }) + "%";
 const dataBR = (iso) => iso.split("-").reverse().join("/");
 const dias = (iso) => Math.round((new Date(iso + "T00:00:00") - new Date(HOJE + "T00:00:00")) / 86400000);
 const MESES = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
