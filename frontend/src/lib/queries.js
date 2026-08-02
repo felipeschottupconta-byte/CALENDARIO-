@@ -145,7 +145,7 @@ export async function carregarGuiasDaEmpresa(empresaId) {
             tributos: (a.apuracao_tributos || []).map((t) => ({
               nome: t.nome, situacao: t.situacao,
               aliquota: numero(t.aliquota), valor: numero(t.valor),
-              reducao: numero(t.percentual_reducao),
+              reducao: numero(t.percentual_reducao), baseCalculo: numero(t.base_calculo),
             })),
           })),
           historico,
@@ -162,7 +162,7 @@ export async function carregarGuiasDaEmpresa(empresaId) {
           tributos: (apuracao.apuracao_tributos || []).map((t) => ({
             nome: t.nome, situacao: t.situacao,
             aliquota: numero(t.aliquota), valor: numero(t.valor),
-            reducao: numero(t.percentual_reducao),
+            reducao: numero(t.percentual_reducao), baseCalculo: numero(t.base_calculo),
           })),
           historico,
           proximo,

@@ -944,7 +944,7 @@ function CardGuia({ g, emp, avisar, marcarPaga }) {
     e.anexos.forEach((a) => a.tributos.forEach((t) => {
       if (!mapa[t.nome]) mapa[t.nome] = { nome: t.nome, situacao: t.situacao, valor: 0, porAnexo: [] };
       mapa[t.nome].valor += t.valor;
-      mapa[t.nome].porAnexo.push({ anexo: a.nome, valor: t.valor });
+      mapa[t.nome].porAnexo.push({ anexo: a.nome, valor: t.valor, aliquota: t.aliquota, baseCalculo: t.baseCalculo });
     }));
     return Object.values(mapa);
   })() : [];
@@ -1104,8 +1104,8 @@ function CardGuia({ g, emp, avisar, marcarPaga }) {
                           <div className="trib-barra-fundo"><div className="trib-barra" style={{ width: `${largura}%` }} /></div>
                           {abertoTrib && (
                             <div className="trib-detalhe">
-                              <div><span>Base de cálculo</span><b>{brl(e.rpa)}</b></div>
-                              <div><span>Alíquota efetiva deste tributo</span><b>{pct(t.aliquota, 3)}</b></div>
+                              <div><span>Base de cálculo</span><b>{brl(t.baseCalculo)}</b></div>
+                              <div><span>Alíquota deste tributo</span><b>{pct(t.aliquota, 4)}</b></div>
                               {t.reducao && <div><span>Redução aplicada na base do ICMS</span><b>{pct(t.reducao)}</b></div>}
                               <p className="trib-nota">
                                 {t.nome === "INSS/CPP" && "A parte da Previdência — a maior fatia do Simples para quem tem funcionários."}
@@ -1182,7 +1182,11 @@ function CardGuia({ g, emp, avisar, marcarPaga }) {
                           {abertoTrib && (
                             <div className="trib-detalhe">
                               {t.porAnexo.map((p, j) => (
-                                <div key={j}><span>{p.anexo}</span><b>{brl(p.valor)}</b></div>
+                                <React.Fragment key={j}>
+                                  <div><span>{descricaoAnexo(p.anexo)} · base de cálculo</span><b>{brl(p.baseCalculo)}</b></div>
+                                  <div><span>{descricaoAnexo(p.anexo)} · alíquota</span><b>{pct(p.aliquota, 4)}</b></div>
+                                  <div><span>{descricaoAnexo(p.anexo)} · valor</span><b>{brl(p.valor)}</b></div>
+                                </React.Fragment>
                               ))}
                             </div>
                           )}
