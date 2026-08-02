@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from "react";
 import { useAuth } from "./src/lib/useAuth.js";
 import { supabase } from "./src/lib/supabase.js";
+import { nomeParcelamento } from "./src/lib/parcelamento.js";
 
 /* ============================================================
    PAINEL DE PUBLICAÇÃO — RN Contabilidade
@@ -178,6 +179,7 @@ function TelaSemAcessoPainel({ sair }) {
 function PainelPrincipal({ perfil, sair }) {
   const [guias, setGuias] = useState([]);
   const [empresas, setEmpresas] = useState([]);
+  const [apuracoes, setApuracoes] = useState([]);
   const [aba, setAba] = useState("guias");
   const [filtro, setFiltro] = useState("pronta");
   const [sel, setSel] = useState(new Set());
@@ -200,9 +202,17 @@ function PainelPrincipal({ perfil, sair }) {
     setEmpresas(data || []);
   };
 
+  const recarregarApuracoes = async () => {
+    const { data } = await supabase
+      .from("apuracoes_simples")
+      .select("*, empresas(razao_social, nome_fantasia, cnpj), apuracao_anexos(*)")
+      .order("competencia", { ascending: false });
+    setApuracoes(data || []);
+  };
+
   useEffect(() => {
     setCarregandoLista(true);
-    Promise.all([recarregarGuias(), recarregarEmpresas()]).finally(() => setCarregandoLista(false));
+    Promise.all([recarregarGuias(), recarregarEmpresas(), recarregarApuracoes()]).finally(() => setCarregandoLista(false));
   }, []);
 
   const contagem = useMemo(() => ({
@@ -253,6 +263,11 @@ function PainelPrincipal({ perfil, sair }) {
           <button className={aba === "guias" ? "on" : ""} onClick={() => setAba("guias")}>
             Guias {contagem.revisao > 0 && <i className="badge">{contagem.revisao}</i>}
           </button>
+          <button className={aba === "extratos" ? "on" : ""} onClick={() => setAba("extratos")}>
+            Extratos {apuracoes.filter((a) => !a.publicada).length > 0 && (
+              <i className="badge">{apuracoes.filter((a) => !a.publicada).length}</i>
+            )}
+          </button>
           <button className={aba === "relatorios" ? "on" : ""} onClick={() => setAba("relatorios")}>
             Relatórios <i className="badge">{RELATORIOS.length}</i>
           </button>
@@ -302,6 +317,21 @@ function PainelPrincipal({ perfil, sair }) {
               </div>
             </div>
           )}
+        </>
+      )}
+
+      {aba === "extratos" && (
+        <>
+          <AreaUploadExtrato empresas={empresas} guias={guias} avisar={avisar} aoTerminar={recarregarApuracoes} />
+          <main className="lista">
+            {carregandoLista && <p className="vazio">Carregando…</p>}
+            {!carregandoLista && apuracoes.length === 0 && (
+              <p className="vazio">Nenhum extrato gravado ainda. Suba um PDF acima.</p>
+            )}
+            {apuracoes.map((a) => (
+              <CardApuracao key={a.id} a={a} avisar={avisar} aoAtualizar={recarregarApuracoes} />
+            ))}
+          </main>
         </>
       )}
 
@@ -396,14 +426,25 @@ function AreaUpload({ empresas, avisar, aoTerminar }) {
         // GFD não tem linha de barras — guia_parser.py guarda o payload Pix
         // no mesmo campo linha_digitavel; aqui é roteado pra coluna certa.
         const ehPix = dados.tipo === "GFD";
+        // guia de parcelamento não tem competência (cobre "Diversos") e a
+        // descrição vira o nome traduzido da sigla, nunca a sigla crua
+        const descricao = dados.eh_parcelamento ? nomeParcelamento(dados.parcelamento_sigla) : (dados.subtipo || dados.tipo);
 
         const { error: erroInsert } = await supabase.from("guias").insert({
           empresa_id: empresa.id,
           tipo: dados.tipo,
-          descricao: dados.subtipo || dados.tipo,
-          competencia: dados.competencia,
+          descricao,
+          competencia: dados.eh_parcelamento ? null : dados.competencia,
           vencimento: dados.vencimento,
           valor: dados.valor,
+          eh_parcelamento: !!dados.eh_parcelamento,
+          parcelamento_sigla: dados.parcelamento_sigla || null,
+          parcelamento_numero: dados.parcelamento_numero || null,
+          parcela_atual: dados.parcela_atual ?? null,
+          parcela_total: dados.parcela_total ?? null,
+          valor_principal: dados.valor_principal ?? null,
+          valor_multa: dados.valor_multa ?? null,
+          valor_juros: dados.valor_juros ?? null,
           linha_digitavel: ehPix ? null : dados.linha_digitavel,
           pix_copia_cola: ehPix ? dados.linha_digitavel : null,
           status,
@@ -451,6 +492,232 @@ function AreaUpload({ empresas, avisar, aoTerminar }) {
     </div>
   );
 }
+
+/* ---------- upload do extrato do Simples (RBT12/alíquota) ----------
+   Diferente da guia: sem vencimento, sem linha digitável. Alimenta
+   apuracoes_simples + apuracao_anexos (quando há mais de um) +
+   apuracao_tributos + apuracao_historico_receita — sempre com
+   publicada=false. Quem libera pro cliente é o "Publicar" em
+   CardApuracao, nunca o upload sozinho (ver CLAUDE.md, invariante 3). */
+function AreaUploadExtrato({ empresas, guias, avisar, aoTerminar }) {
+  const [processando, setProcessando] = useState(false);
+  const [progresso, setProgresso] = useState([]);
+
+  const processarArquivos = async (arquivos) => {
+    setProcessando(true);
+    setProgresso(arquivos.map((f) => ({ arquivo: f.name, situacao: "processando", detalhe: "" })));
+
+    let gravadas = 0, revisao = 0, duplicadas = 0;
+
+    for (let i = 0; i < arquivos.length; i++) {
+      const arquivo = arquivos[i];
+      const atualizar = (patch) => setProgresso((p) => p.map((item, j) => (j === i ? { ...item, ...patch } : item)));
+
+      try {
+        const form = new FormData();
+        form.append("arquivo", arquivo);
+        form.append("empresas", JSON.stringify(empresas.map((e) => ({
+          id: e.id, cnpj: e.cnpj, razao_social: e.razao_social, nome_fantasia: e.nome_fantasia,
+        }))));
+        const resp = await fetch("/api/parse-extrato", { method: "POST", body: form });
+        const dados = await resp.json();
+
+        if (!resp.ok) {
+          atualizar({ situacao: "erro", detalhe: dados.erro || "falha ao processar" });
+          continue;
+        }
+
+        const { data: existente } = await supabase
+          .from("apuracoes_simples").select("id").eq("arquivo_hash", dados.arquivo_hash).maybeSingle();
+        if (existente) {
+          duplicadas++;
+          atualizar({ situacao: "duplicada", detalhe: "arquivo já processado" });
+          continue;
+        }
+
+        const ident = dados.identificacao || {};
+        const empresa = ident.empresa_id ? empresas.find((e) => e.id === ident.empresa_id) : null;
+
+        if (!empresa) {
+          revisao++;
+          const motivo = ident.candidatos && ident.candidatos.length > 1
+            ? "empresa ambígua — mais de uma corresponde, selecionar manualmente"
+            : (ident.motivos || []).join(" · ") || "CNPJ não cadastrado no sistema — cadastre a empresa e suba de novo";
+          atualizar({ situacao: "revisao", detalhe: motivo });
+          continue;
+        }
+
+        // linka no DAS da mesma competência, se já existir — só facilita
+        // a conferência cruzada, nunca é obrigatório
+        const guiaDas = guias.find((g) =>
+          g.cnpj === empresa.cnpj && g.tipo === "DAS" && g.competencia === dados.competencia);
+
+        const ano = dados.competencia ? dados.competencia.slice(3, 7) : String(new Date().getFullYear());
+        const caminhoStorage = `extratos/${dados.cnpj}/${ano}/${dados.arquivo_hash}.pdf`;
+        const { error: erroUpload } = await supabase.storage.from("guias").upload(caminhoStorage, arquivo, {
+          contentType: "application/pdf", upsert: false,
+        });
+        if (erroUpload) {
+          atualizar({ situacao: "erro", detalhe: "falha no upload: " + erroUpload.message });
+          continue;
+        }
+
+        const anexoUnico = !dados.multiplos_anexos ? dados.anexos[0] : null;
+
+        const { data: apuracaoInserida, error: erroApuracao } = await supabase.from("apuracoes_simples").insert({
+          empresa_id: empresa.id,
+          guia_id: guiaDas ? guiaDas.id : null,
+          competencia: dados.competencia,
+          anexo: anexoUnico ? anexoUnico.anexo : null,
+          rpa: dados.rpa,
+          rbt12: dados.rbt12,
+          faixa_de: dados.faixa_de,
+          faixa_ate: dados.faixa_ate,
+          aliquota_nominal: anexoUnico ? anexoUnico.aliquota_nominal : null,
+          aliquota_efetiva: anexoUnico ? anexoUnico.aliquota_efetiva : dados.aliquota_efetiva_media,
+          parcela_deduzir: anexoUnico ? anexoUnico.parcela_deduzir : null,
+          total_a_recolher: dados.total_a_recolher,
+          storage_path: caminhoStorage,
+          arquivo_hash: dados.arquivo_hash,
+          publicada: false,
+        }).select("id").single();
+        if (erroApuracao) {
+          atualizar({ situacao: "erro", detalhe: erroApuracao.message });
+          continue;
+        }
+        const apuracaoId = apuracaoInserida.id;
+
+        if (dados.historico_rbt12?.length) {
+          const { error: erroHist } = await supabase.from("apuracao_historico_receita").insert(
+            dados.historico_rbt12.map((h) => ({
+              apuracao_id: apuracaoId, competencia: h.competencia,
+              receita_interna: h.receita_interna, receita_exportacao: h.receita_exportacao,
+            }))
+          );
+          if (erroHist) console.error("Falha ao gravar histórico de receita:", erroHist.message);
+        }
+
+        if (dados.multiplos_anexos) {
+          for (const a of dados.anexos) {
+            const { data: anexoInserido, error: erroAnexo } = await supabase.from("apuracao_anexos").insert({
+              apuracao_id: apuracaoId, anexo: a.anexo, receita_tributada: a.receita_tributada,
+              aliquota_nominal: a.aliquota_nominal, aliquota_efetiva: a.aliquota_efetiva,
+              parcela_deduzir: a.parcela_deduzir, percentual_reducao_icms: a.percentual_reducao_icms,
+              subtotal: a.subtotal,
+            }).select("id").single();
+            if (erroAnexo) { console.error("Falha ao gravar anexo:", erroAnexo.message); continue; }
+            if (a.tributos?.length) {
+              const { error: erroTrib } = await supabase.from("apuracao_tributos").insert(
+                a.tributos.map((t) => ({
+                  apuracao_id: apuracaoId, apuracao_anexo_id: anexoInserido.id, nome: t.nome,
+                  situacao: t.situacao, base_calculo: t.base_calculo, aliquota: t.aliquota,
+                  percentual_reducao: a.percentual_reducao_icms, valor: t.valor,
+                }))
+              );
+              if (erroTrib) console.error("Falha ao gravar tributos do anexo:", erroTrib.message);
+            }
+          }
+        } else if (anexoUnico?.tributos?.length) {
+          const { error: erroTrib } = await supabase.from("apuracao_tributos").insert(
+            anexoUnico.tributos.map((t) => ({
+              apuracao_id: apuracaoId, nome: t.nome, situacao: t.situacao,
+              base_calculo: t.base_calculo, aliquota: t.aliquota,
+              percentual_reducao: anexoUnico.percentual_reducao_icms, valor: t.valor,
+            }))
+          );
+          if (erroTrib) console.error("Falha ao gravar tributos:", erroTrib.message);
+        }
+
+        gravadas++;
+        atualizar({
+          situacao: dados.precisa_revisao ? "revisao" : "pronta",
+          detalhe: dados.precisa_revisao ? (dados.alertas || []).join(" · ") : "gravado — falta publicar",
+        });
+      } catch (e) {
+        atualizar({ situacao: "erro", detalhe: String(e.message || e) });
+      }
+    }
+
+    setProcessando(false);
+    avisar(`${gravadas} extrato${gravadas === 1 ? "" : "s"} gravado${gravadas === 1 ? "" : "s"}, ${revisao} em revisão, ${duplicadas} duplicado${duplicadas === 1 ? "" : "s"}`);
+    await aoTerminar();
+  };
+
+  return (
+    <div className="upload">
+      <label className="upload-botao">
+        {processando ? "Processando…" : "Subir extrato do Simples"}
+        <input type="file" accept="application/pdf" multiple disabled={processando}
+          onChange={(e) => { const fs = [...e.target.files]; e.target.value = ""; if (fs.length) processarArquivos(fs); }}
+          style={{ display: "none" }} />
+      </label>
+      {progresso.length > 0 && (
+        <div className="upload-lista">
+          {progresso.map((p, i) => (
+            <div key={i} className={"upload-item " + p.situacao}>
+              <span className="mono">{p.arquivo}</span>
+              <span>{p.situacao}{p.detalhe ? " — " + p.detalhe : ""}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---------- card de apuração do extrato ---------- */
+function CardApuracao({ a, avisar, aoAtualizar }) {
+  const [publicando, setPublicando] = useState(false);
+  const anexos = a.apuracao_anexos || [];
+  const multiplo = anexos.length > 1;
+  const empresa = a.empresas;
+
+  const publicar = async () => {
+    setPublicando(true);
+    try {
+      const { error } = await supabase.from("apuracoes_simples").update({ publicada: true }).eq("id", a.id);
+      if (error) { avisar("Falha ao publicar: " + error.message); return; }
+      avisar("Extrato publicado — visível no \"Entenda seu imposto\" do cliente");
+      await aoAtualizar();
+    } catch (e) {
+      avisar("Erro inesperado ao publicar: " + (e.message || e));
+    } finally {
+      setPublicando(false);
+    }
+  };
+
+  return (
+    <article className={"card" + (!a.publicada ? " rev" : "")} style={{ flexDirection: "column", padding: 14, alignItems: "stretch", gap: 8 }}>
+      <div className="card-linha1">
+        <span className="selo das">EXTRATO</span>
+        <strong>{empresa?.nome_fantasia || empresa?.razao_social || "empresa não identificada"}</strong>
+        <span className="valor">{pctFmt(a.aliquota_efetiva)}</span>
+      </div>
+      <div className="card-linha3">
+        <span className="mono">{cnpjFmt(empresa?.cnpj)}</span>
+        <span>·</span>
+        <span>competência {a.competencia}</span>
+        <span>·</span>
+        <span>RBT12 {brl(a.rbt12)}</span>
+        {multiplo && <span>· {anexos.length} anexos</span>}
+      </div>
+      <div className="acoes">
+        <span style={{ flex: 1, alignSelf: "center", fontSize: 12.5, color: a.publicada ? "#1F6B4A" : "#B8791A", fontWeight: 600 }}>
+          {a.publicada ? "Publicado" : "Aguardando publicação"}
+        </span>
+        {!a.publicada && (
+          <button className="btn-primario" disabled={publicando} onClick={publicar}>
+            {publicando ? "Publicando…" : "Publicar"}
+          </button>
+        )}
+      </div>
+    </article>
+  );
+}
+
+// aliquota_efetiva é gravada como número "de fato" (6,50), não fração —
+// mesma convenção usada no app do cliente (ver pct() em app-cliente.jsx)
+const pctFmt = (v) => (v == null ? "—" : `${Number(v).toFixed(2).replace(".", ",")}%`);
 
 /* ---------- cadastro de empresas ---------- */
 function AbaEmpresas({ empresas, avisar, aoCadastrar }) {

@@ -6,6 +6,7 @@ import {
   carregarCargaTributaria,
   carregarLimiteSimples,
   registrarEvento,
+  marcarGuiaComoPaga,
 } from "./src/lib/queries.js";
 
 /* ============================================================
@@ -299,12 +300,6 @@ const EMPRESAS = {
   },
 };
 
-const DOCUMENTOS = [
-  { id: "d1", nome: "Folha de pagamento — 06/2026", cat: "Pessoal", data: "02/07/2026", novo: true },
-  { id: "d2", nome: "Recibos de pagamento — 06/2026", cat: "Pessoal", data: "02/07/2026", novo: true },
-  { id: "d3", nome: "Balancete — 05/2026", cat: "Contábil", data: "20/06/2026" },
-];
-
 const EMAIL_ESCRITORIO = "felipeschottbraga@gmail.com";
 
 const TIPOS_PEDIDO = [
@@ -323,6 +318,8 @@ const pct = (v, casas = 2) => v.toLocaleString("pt-BR", { minimumFractionDigits:
 const dataBR = (iso) => iso.split("-").reverse().join("/");
 const dias = (iso) => Math.round((new Date(iso + "T00:00:00") - new Date(HOJE + "T00:00:00")) / 86400000);
 const MESES = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+const MESES_LONGOS = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho",
+  "agosto", "setembro", "outubro", "novembro", "dezembro"];
 const valorAbrev = (v) => v >= 1000
   ? (v / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 }) + "k"
   : v.toLocaleString("pt-BR", { maximumFractionDigits: 0 });
@@ -371,6 +368,11 @@ export default function App() {
           ]);
           mapa[id].guias = guias;
           mapa[id].contato = perfil.nome;
+          // a agenda vem direto das guias publicadas — cada uma com
+          // vencimento vira um ponto no calendário, igual o protótipo já fazia
+          mapa[id].agenda = guias
+            .filter((g) => g.venc)
+            .map((g) => ({ data: g.venc, titulo: g.nome, nota: brl(g.valor), tipo: g.status === "paga" ? "paga" : "guia" }));
           if (cargaTributaria) mapa[id].cargaTributaria = cargaTributaria;
           if (limiteSimples) mapa[id].limiteSimples = limiteSimples;
         }));
@@ -384,11 +386,25 @@ export default function App() {
 
   const emp = empId ? empresas[empId] : null;
 
-  const marcarPaga = async (g, comComprovante, nomeArquivo) => {
-    setPagas((p) => [...p, g.id]);
-    avisar(comComprovante ? "Guia marcada como paga, com comprovante" : "Guia marcada como paga");
+  // marcar como paga é uma declaração do cliente, não confirmação de
+  // compensação bancária — por isso "informado como pago em DD/MM" em
+  // vez de "pagamento confirmado" na tela da guia (ver CardGuia).
+  const marcarPaga = async (g, arquivo, dataPagamento) => {
     try {
-      await registrarEvento(g.id, "marcada_paga", { comComprovante, nomeArquivo });
+      await marcarGuiaComoPaga(g.id, emp.cnpj.replace(/\D/g, ""), arquivo, dataPagamento);
+    } catch (e) {
+      avisar("Não consegui registrar o pagamento: " + (e.message || e));
+      return;
+    }
+    setPagas((p) => [...p, g.id]);
+    avisar(arquivo ? "Guia marcada como paga, com comprovante" : "Guia marcada como paga");
+    try {
+      const guiasAtualizadas = await carregarGuiasDaEmpresa(emp.id);
+      setEmpresas((mapa) => ({ ...mapa, [emp.id]: { ...mapa[emp.id], guias: guiasAtualizadas } }));
+    } catch {
+      // a marcação já foi salva no banco — só a lista não recarregou sozinha
+    }
+    try {
       await fetch("/api/notificar-pedido", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -400,12 +416,12 @@ export default function App() {
           guiaNome: g.nome,
           guiaCompetencia: g.comp,
           guiaValor: brl(g.valor),
-          comComprovante,
-          nomeArquivo: nomeArquivo || null,
+          comComprovante: !!arquivo,
+          nomeArquivo: arquivo?.name || null,
         }),
       });
     } catch {
-      // marcação já ficou salva na tela; o e-mail é best-effort aqui
+      // registro já ficou salvo; o e-mail é best-effort aqui
     }
   };
 
@@ -555,20 +571,57 @@ function Seletor({ atual, empresas, onEscolher, onFechar }) {
   );
 }
 
+// Última competência com "Entenda seu imposto" publicado — a alíquota
+// que aparece abaixo do total na Início. Quando o mês teve mais de um
+// anexo, devolve a média ponderada pela receita de cada um.
+function ultimaAliquotaEfetiva(guias) {
+  const comEntenda = [...guias]
+    .filter((g) => g.entenda && g.comp)
+    .sort((a, b) => b.comp.localeCompare(a.comp));
+  const g = comEntenda[0];
+  if (!g) return null;
+  if (g.entenda.anexos) {
+    const somaReceita = g.entenda.anexos.reduce((s, a) => s + a.receitaTributada, 0);
+    if (!somaReceita) return null;
+    const media = g.entenda.anexos.reduce((s, a) => s + a.aliquotaEfetiva * a.receitaTributada, 0) / somaReceita;
+    return { valor: media, media: true, comp: g.comp };
+  }
+  return { valor: g.entenda.aliquotaEfetiva, media: false, comp: g.comp };
+}
+
 function Inicio({ emp, ir, avisar, pagas }) {
-  const pendentes = emp.guias.filter((g) => !pagas.includes(g.id));
-  const total = pendentes.reduce((s, g) => s + g.valor, 0);
-  const prox = [...pendentes].sort((a, b) => a.venc.localeCompare(b.venc))[0];
-  const novos = DOCUMENTOS.filter((d) => d.novo).length;
+  const mesAtual = HOJE.slice(0, 7);
+  const pendentes = emp.guias.filter((g) => !pagas.includes(g.id) && g.status !== "paga");
+  const doMes = pendentes.filter((g) => g.venc && g.venc.slice(0, 7) === mesAtual);
+  const total = doMes.reduce((s, g) => s + g.valor, 0);
+  const prox = [...doMes].sort((a, b) => a.venc.localeCompare(b.venc))[0];
+
+  const futuros = pendentes.filter((g) => g.venc && g.venc.slice(0, 7) > mesAtual);
+  const porMesFuturo = {};
+  futuros.forEach((g) => { porMesFuturo[g.venc.slice(0, 7)] = (porMesFuturo[g.venc.slice(0, 7)] || 0) + g.valor; });
+  const mesesFuturos = Object.keys(porMesFuturo).sort();
+
+  const aliquota = emp.regime === "Simples Nacional" ? ultimaAliquotaEfetiva(emp.guias) : null;
+
   return (
     <div className="pilha">
       <section className="destaque">
-        <p className="rotulo">A pagar em julho</p>
+        <p className="rotulo">A pagar em {MESES_LONGOS[+mesAtual.slice(5, 7) - 1]}</p>
         <p className="numero">{total > 0 ? brl(total) : "Nada em aberto"}</p>
         <p className="nota">
-          {total > 0 ? `${pendentes.length} ${pendentes.length === 1 ? "guia" : "guias"} · a primeira vence em ${dataBR(prox.venc)}`
+          {total > 0 ? `${doMes.length} ${doMes.length === 1 ? "guia" : "guias"} · a primeira vence em ${dataBR(prox.venc)}`
                      : "Nenhuma guia publicada para este mês ainda"}
         </p>
+        {mesesFuturos.map((chave) => (
+          <p className="nota" key={chave}>
+            + {brl(porMesFuturo[chave])} vencendo em {MESES_LONGOS[+chave.slice(5, 7) - 1]}
+          </p>
+        ))}
+        {aliquota && (
+          <p className="nota">
+            alíquota efetiva{aliquota.media ? " média" : ""} de {aliquota.comp}: {pct(aliquota.valor)}
+          </p>
+        )}
         {total > 0 && <button className="btn-claro" onClick={() => ir("guias")}>Ver guias</button>}
       </section>
 
@@ -587,7 +640,6 @@ function Inicio({ emp, ir, avisar, pagas }) {
       </section>
 
       <section className="atalhos">
-        <button onClick={() => ir("guias")}><b>{novos}</b><span>Documentos novos</span></button>
         <button onClick={() => ir("pedidos")}><b>+</b><span>Fazer um pedido</span></button>
         <button onClick={() => avisar("Abrindo conversa com o escritório")}><b>✆</b><span>Falar com a RN</span></button>
         <button onClick={() => ir("empresa")}><b>◈</b><span>Dados da empresa</span></button>
@@ -695,33 +747,36 @@ function CardLimiteSimples({ ls }) {
   return (
     <section className={"panorama limite " + estado}>
       <div>
-        <span className="etiqueta">Sublimite de ICMS e ISS</span>
+        <span className="etiqueta">Limite de faturamento — ICMS e ISS</span>
         <p className="carga-pct">{brl(ls.rbt12Atual)}</p>
-        <p className="fino">de {brl(ls.sublimiteIcmsIss)} de sublimite (RBT12 acumulado)</p>
+        <p className="fino">
+          de {brl(ls.sublimiteIcmsIss)} — a receita acumulada nos últimos 12 meses que define se ICMS
+          e ISS continuam saindo pelo DAS
+        </p>
       </div>
 
       <div className="medidor-barra">
         <div className="medidor-preenchido" style={{ width: percentualSublimite + "%" }} />
         <div className="limite-marcador" style={{ left: marcadorPct + "%" }} title="Início da faixa atual" />
       </div>
-      <p className="fino">{pct(percentualSublimite)} do sublimite · faixa atual de {brl(ls.faixaDe)} a {brl(ls.faixaAte)}</p>
+      <p className="fino">{pct(percentualSublimite)} desse limite · faixa atual de {brl(ls.faixaDe)} a {brl(ls.faixaAte)}</p>
 
       {ultrapassou && (
         <p className="pan-alerta alerta">
-          O RBT12 já ultrapassou o sublimite de ICMS e ISS. Sua empresa continua no Simples para os
-          tributos federais, mas ICMS e ISS passam a ser recolhidos fora do DAS, pelas regras normais
-          do estado e do município.
+          Sua receita acumulada nos últimos 12 meses já passou do limite que mantém ICMS e ISS dentro
+          do DAS. Sua empresa continua no Simples para os tributos federais, mas ICMS e ISS passam a
+          ser recolhidos fora do DAS, pelas regras normais do estado e do município.
         </p>
       )}
       {!ultrapassou && estado !== "neutro" && (
         <p className={"pan-alerta" + (estado === "alerta" ? " alerta" : "")}>
-          O RBT12 já soma {pct(percentualSublimite)} do sublimite de ICMS e ISS.
+          A receita acumulada nos últimos 12 meses já soma {pct(percentualSublimite)} desse limite.
         </p>
       )}
 
       {ls.mesesAteSublimite != null && (
         <p className="fino">
-          No ritmo dos últimos 3 meses, o sublimite seria atingido em aproximadamente{" "}
+          No ritmo dos últimos 3 meses, esse limite seria atingido em aproximadamente{" "}
           {ls.mesesAteSublimite} {ls.mesesAteSublimite === 1 ? "mês" : "meses"}.
         </p>
       )}
@@ -731,6 +786,39 @@ function CardLimiteSimples({ ls }) {
         que entra em contato caso algo exija atenção.
       </p>
     </section>
+  );
+}
+
+// Card de guia de parcelamento (PARCSN, RELP...) direto do que o
+// parser extraiu — diferente do DetalheParcelamento abaixo, que lê de
+// um parcelamento estruturado (tabela parcelamentos, curada pelo
+// escritório). Este é o caso simples: uma guia isolada já chega com
+// os campos de parcela prontos.
+function ResumoParcelamentoGuia({ g }) {
+  const [aberto, setAberto] = useState(false);
+  const percentual = g.parcelaTotal ? Math.round((100 * (g.parcelaAtual - 1)) / g.parcelaTotal) : 0;
+  const restantes = g.parcelaTotal != null && g.parcelaAtual != null ? g.parcelaTotal - g.parcelaAtual : null;
+  const quitacao = restantes != null && g.venc ? new Date(g.venc + "T00:00:00") : null;
+  if (quitacao) quitacao.setMonth(quitacao.getMonth() + restantes);
+
+  return (
+    <div className="pilha-fina">
+      <div className="medidor-barra"><div className="medidor-preenchido" style={{ width: percentual + "%" }} /></div>
+      <div className="parc-legenda">
+        <span>{percentual}% concluído</span>
+        {quitacao && <span>quitação prevista {dataBR(quitacao.toISOString().slice(0, 10))}</span>}
+      </div>
+      <button className="guia-acao" onClick={() => setAberto(!aberto)}>
+        {aberto ? "Ocultar composição da parcela" : "Ver composição da parcela"}
+      </button>
+      {aberto && (
+        <div className="composicao">
+          <div><span>Principal</span><b>{brl(g.valorPrincipal)}</b></div>
+          <div><span>Multa</span><b>{brl(g.valorMulta)}</b></div>
+          <div><span>Juros</span><b>{brl(g.valorJuros)}</b></div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -795,28 +883,12 @@ function Linha({ e }) {
 }
 
 function Guias({ emp, avisar, pagas, marcarPaga }) {
-  const [vista, setVista] = useState("guias");
-  const pendentes = emp.guias.filter((g) => !pagas.includes(g.id));
+  const pendentes = emp.guias.filter((g) => !pagas.includes(g.id) && g.status !== "paga");
   return (
     <div className="pilha">
-      <div className="segmentado">
-        <button className={vista === "guias" ? "on" : ""} onClick={() => setVista("guias")}>Guias</button>
-        <button className={vista === "docs" ? "on" : ""} onClick={() => setVista("docs")}>Documentos</button>
-      </div>
-      {vista === "guias" ? (
-        pendentes.length
-          ? pendentes.map((g) => <CardGuia key={g.id} g={g} emp={emp} avisar={avisar} marcarPaga={marcarPaga} />)
-          : <p className="vazio">Nenhuma guia em aberto. Avisamos assim que houver.</p>
-      ) : (
-        <div className="pilha-fina">
-          {DOCUMENTOS.map((d) => (
-            <button className="doc" key={d.id} onClick={() => avisar("Baixando " + d.nome)}>
-              <div><strong>{d.nome} {d.novo && <em className="tag-novo">novo</em>}</strong><span>{d.cat} · {d.data}</span></div>
-              <span className="baixar">↓</span>
-            </button>
-          ))}
-        </div>
-      )}
+      {pendentes.length
+        ? pendentes.map((g) => <CardGuia key={g.id} g={g} emp={emp} avisar={avisar} marcarPaga={marcarPaga} />)
+        : <p className="vazio">Nenhuma guia em aberto. Avisamos assim que houver.</p>}
     </div>
   );
 }
@@ -829,6 +901,8 @@ function CardGuia({ g, emp, avisar, marcarPaga }) {
   const [recalculo, setRecalculo] = useState(false);
   const [pagando, setPagando] = useState(false);
   const [arquivo, setArquivo] = useState(null);
+  const [dataPagamento, setDataPagamento] = useState(HOJE);
+  const [enviandoPagamento, setEnviandoPagamento] = useState(false);
   const n = dias(g.venc);
   const cor = n < 0 ? "atraso" : n <= 5 ? "atencao" : "normal";
   const e = g.entenda;
@@ -861,17 +935,25 @@ function CardGuia({ g, emp, avisar, marcarPaga }) {
           <span className="selo">{g.tipo}</span>
           {g.novo && <span className="tag-novo solto">novo</span>}
           <h4>{g.nome}</h4>
-          <p className="fino">{g.orgao} · competência {g.comp}</p>
+          <p className="fino">
+            {g.ehParcelamento
+              ? `Parcela ${g.parcelaAtual} de ${g.parcelaTotal}`
+              : `${g.orgao} · competência ${g.comp}`}
+          </p>
         </div>
         <div className="guia-valor"><strong>{brl(g.valor)}</strong><span>{dataBR(g.venc)}</span></div>
       </div>
       <span className={"estado " + cor}>{cor === "atraso" ? "Venceu em " : "Vence em "}{dataBR(g.venc)}</span>
+      {g.status === "paga" && g.pagaEm && (
+        <p className="obs recalculo-ok">✓ Informado como pago em {dataBR(g.pagaEm)}</p>
+      )}
       {g.obs && <p className="obs">{g.obs}</p>}
       {g.composicao && (
         <div className="composicao">
           {g.composicao.map((c, i) => <div key={i}><span>{c.n}</span><b>{brl(c.v)}</b></div>)}
         </div>
       )}
+      {g.ehParcelamento && <ResumoParcelamentoGuia g={g} />}
       {g.parcelamento && <DetalheParcelamento pc={g.parcelamento} />}
 
       {g.pix ? (
@@ -899,19 +981,30 @@ function CardGuia({ g, emp, avisar, marcarPaga }) {
       {pagando ? (
         <div className="pilha-fina">
           <label className="campo">
+            <span>Data do pagamento</span>
+            <input type="date" value={dataPagamento} onChange={(ev) => setDataPagamento(ev.target.value)} />
+          </label>
+          <label className="campo">
             <span>Comprovante (opcional)</span>
             <input type="file" accept="image/*,.pdf" onChange={(ev) => setArquivo(ev.target.files[0] || null)} />
           </label>
           {arquivo && <p className="fino">Anexado: {arquivo.name}</p>}
           <div className="dupla">
-            <button className="btn-secundario pequeno" onClick={() => { setPagando(false); setArquivo(null); }}>Cancelar</button>
-            <button className="btn-primario pequeno" onClick={() => marcarPaga(g, !!arquivo, arquivo?.name)}>
-              Confirmar
+            <button className="btn-secundario pequeno" disabled={enviandoPagamento}
+              onClick={() => { setPagando(false); setArquivo(null); }}>Cancelar</button>
+            <button className="btn-primario pequeno" disabled={enviandoPagamento}
+              onClick={async () => {
+                setEnviandoPagamento(true);
+                await marcarPaga(g, arquivo, dataPagamento);
+                setEnviandoPagamento(false);
+                setPagando(false);
+              }}>
+              {enviandoPagamento ? "Enviando…" : "Confirmar"}
             </button>
           </div>
         </div>
       ) : (
-        <button className="guia-acao" onClick={() => setPagando(true)}>Marcar como paga</button>
+        <button className="guia-acao" onClick={() => setPagando(true)}>Já paguei</button>
       )}
 
       {recalculo ? (
@@ -993,7 +1086,7 @@ function CardGuia({ g, emp, avisar, marcarPaga }) {
                                 {t.nome === "ICMS" && "Imposto estadual sobre a venda de mercadorias, com redução de 3,23% aplicada pelo estado do RJ."}
                                 {t.nome === "IRPJ" && "Imposto de Renda da empresa, já recolhido dentro do DAS."}
                                 {t.nome === "CSLL" && "Contribuição sobre o lucro, recolhida junto com os demais tributos federais."}
-                                {t.nome === "PIS" && "Contribuição federal sobre o faturamento, menor fatia da partilha."}
+                                {t.nome === "PIS" && "Contribuição federal sobre o faturamento, a menor fatia entre os tributos do DAS."}
                               </p>
                             </div>
                           )}
@@ -1098,23 +1191,37 @@ function CardGuia({ g, emp, avisar, marcarPaga }) {
 }
 
 function Agenda({ emp }) {
-  const ano = 2026, mes = 6; // julho
+  const [cursor, setCursor] = useState(HOJE.slice(0, 7)); // "AAAA-MM"
+  const [selecionado, setSelecionado] = useState(null);
+  const ano = +cursor.slice(0, 4), mes = +cursor.slice(5, 7) - 1;
   const inicio = new Date(ano, mes, 1).getDay();
   const qtd = new Date(ano, mes + 1, 0).getDate();
-  const chave = (d) => `${ano}-07-${String(d).padStart(2, "0")}`;
-  const [selecionado, setSelecionado] = useState(null);
+  const chave = (d) => `${ano}-${String(mes + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
 
-  const totalMes = emp.guias.reduce((s, g) => s + g.valor, 0);
-  const proxima = [...emp.agenda].filter((e) => dias(e.data) >= 0).sort((a, b) => a.data.localeCompare(b.data))[0];
-  const eventos = selecionado ? emp.agenda.filter((e) => e.data === selecionado) : emp.agenda;
+  const agendaDoMes = emp.agenda.filter((e) => e.data.slice(0, 7) === cursor);
+  const totalMes = emp.guias
+    .filter((g) => g.venc && g.venc.slice(0, 7) === cursor && g.status !== "paga")
+    .reduce((s, g) => s + g.valor, 0);
+  const proxima = [...agendaDoMes].filter((e) => dias(e.data) >= 0).sort((a, b) => a.data.localeCompare(b.data))[0];
+  const eventos = selecionado ? agendaDoMes.filter((e) => e.data === selecionado) : agendaDoMes;
+
+  const trocarMes = (delta) => {
+    const d = new Date(ano, mes + delta, 1);
+    setCursor(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+    setSelecionado(null);
+  };
 
   return (
     <div className="pilha">
       <section className="destaque">
-        <p className="rotulo">Julho · a pagar no mês</p>
+        <div className="agenda-nav">
+          <button className="btn-claro pequeno" onClick={() => trocarMes(-1)}>‹</button>
+          <p className="rotulo">{MESES_LONGOS[mes]} de {ano} · a pagar no mês</p>
+          <button className="btn-claro pequeno" onClick={() => trocarMes(1)}>›</button>
+        </div>
         <p className="numero">{totalMes > 0 ? brl(totalMes) : "Nada em aberto"}</p>
         <p className="nota">
-          {proxima ? `Próximo: ${proxima.titulo} · ${dataBR(proxima.data)}` : "Nenhum compromisso à frente"}
+          {proxima ? `Próximo: ${proxima.titulo} · ${dataBR(proxima.data)}` : "Nenhum compromisso neste mês"}
         </p>
       </section>
 
@@ -1124,17 +1231,18 @@ function Agenda({ emp }) {
         {Array.from({ length: qtd }).map((_, i) => {
           const d = i + 1;
           const chaveD = chave(d);
-          const evs = emp.agenda.filter((e) => e.data === chaveD);
-          const valorDia = emp.guias.filter((g) => g.venc === chaveD).reduce((s, g) => s + g.valor, 0);
-          const tipoPrincipal = evs[0]?.tipo;
+          const guiasDoDia = emp.guias.filter((g) => g.venc === chaveD);
+          const evs = agendaDoMes.filter((e) => e.data === chaveD);
+          const valorDia = guiasDoDia.filter((g) => g.status !== "paga").reduce((s, g) => s + g.valor, 0);
+          const tipoPrincipal = guiasDoDia.length && guiasDoDia.every((g) => g.status === "paga") ? "paga" : "guia";
           return (
             <button key={d} type="button" disabled={!evs.length}
-              className={"cel" + (evs.length ? " tem " + tipoPrincipal : "") + (d === 5 ? " hoje" : "")
+              className={"cel" + (evs.length ? " tem " + tipoPrincipal : "") + (chaveD === HOJE ? " hoje" : "")
                 + (selecionado === chaveD ? " sel" : "")}
               onClick={() => setSelecionado(selecionado === chaveD ? null : chaveD)}>
               <span className="cel-dia">{d}</span>
               {valorDia > 0 && <span className="cel-valor">{valorAbrev(valorDia)}</span>}
-              {evs.length > 0 && <i className="pontos">{evs.slice(0, 3).map((e, j) => <b key={j} className={e.tipo} />)}</i>}
+              {evs.length > 0 && <i className="pontos">{evs.slice(0, 3).map((e, j) => <b key={j} className={tipoPrincipal} />)}</i>}
             </button>
           );
         })}
@@ -1142,7 +1250,7 @@ function Agenda({ emp }) {
 
       <div className="legenda">
         <span><b className="guia" /> Guia a pagar</span>
-        <span><b className="dp" /> Pessoal</span>
+        <span><b className="paga" /> Guia paga</span>
         <span><b className="obrigacao" /> Escritório</span>
         <span><b className="voce" /> Ação sua</span>
       </div>
@@ -1336,6 +1444,9 @@ h2,h3,h4,h5{font-family:'Instrument Sans',sans-serif;letter-spacing:-.01em}
 
 .destaque{background:var(--tinta);color:#fff;border-radius:18px;padding:20px;display:flex;flex-direction:column;gap:6px}
 .rotulo{color:#B5B5B0}
+.agenda-nav{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.agenda-nav .rotulo{flex:1;text-align:center;margin:0}
+.agenda-nav .btn-claro.pequeno{flex:none;padding:6px 12px;align-self:center}
 .numero{font-size:38px;font-weight:600;line-height:1.05}
 .nota{font-size:13px;color:#C6C6C1;margin-bottom:10px}
 .secao{color:var(--suave);margin-bottom:10px;display:block}
@@ -1367,6 +1478,7 @@ h2,h3,h4,h5{font-family:'Instrument Sans',sans-serif;letter-spacing:-.01em}
 .linha-dp{border-left-color:var(--ambar)}
 .linha-obrigacao{border-left-color:#9A9A96}
 .linha-voce{border-left-color:var(--rubro)}
+.linha-paga{border-left-color:var(--verde)}
 .bloco-data{display:flex;flex-direction:column;align-items:center;min-width:32px}
 .bloco-data .dia{font-family:'Bodoni Moda',serif;font-size:20px;font-weight:600;line-height:1}
 .bloco-data .mes{font-family:'Jost',sans-serif;font-size:9.5px;letter-spacing:.14em;color:var(--suave)}
@@ -1378,6 +1490,7 @@ h2,h3,h4,h5{font-family:'Instrument Sans',sans-serif;letter-spacing:-.01em}
 .pino.dp,b.dp{background:var(--ambar)}
 .pino.obrigacao,b.obrigacao{background:#9A9A96}
 .pino.voce,b.voce{background:var(--rubro)}
+.pino.paga,b.paga{background:var(--verde)}
 
 .atalhos{display:grid;grid-template-columns:1fr 1fr;gap:9px}
 .atalhos button{background:#fff;border:1px solid var(--linha);border-radius:14px;padding:16px 12px;
@@ -1443,8 +1556,10 @@ article.guia{background:#fff;border:1px solid var(--linha);border-radius:14px;pa
 .cel.tem.dp{background:#FBF4E6}
 .cel.tem.obrigacao{background:#F0F0EE}
 .cel.tem.voce{background:#FBE9E7}
+.cel.tem.paga{background:#E3EDE7}
 .cel-valor{font-family:'JetBrains Mono';font-size:7px;color:var(--suave)}
 .cel.tem.guia .cel-valor{color:var(--tinta);font-weight:700}
+.cel.tem.paga .cel-valor{color:var(--verde);font-weight:700}
 .cel.hoje{background:var(--tinta)!important;color:#fff}
 .cel.hoje .cel-valor{color:#D9D9D6}
 .cel.sel{box-shadow:inset 0 0 0 2px var(--tinta)}

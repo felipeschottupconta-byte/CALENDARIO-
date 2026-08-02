@@ -5,17 +5,14 @@
 // código; se um select vier vazio, é porque a RLS bloqueou, não
 // porque esquecemos um .eq(). Ver CLAUDE.md, invariante 2.
 //
-// Cobertura atual: empresas do usuário, guias, parcelamento (quando a
-// parcela publicada estiver linkada à guia), carga tributária e
-// sublimite do Simples, e a apuração de "Entenda seu imposto" — só no
-// formato de anexo único, que é o que o schema hoje suporta.
+// Cobertura atual: empresas do usuário, guias, agenda (derivada do
+// vencimento das próprias guias), parcelamento (quando a parcela
+// publicada estiver linkada à guia), carga tributária e sublimite do
+// Simples, e a apuração de "Entenda seu imposto" — anexo único e
+// múltiplos anexos (ver sql/07-apuracao-anexos.sql).
 //
 // Ainda NÃO ligado (gap conhecido, não inventar dado pra cobrir):
-//   - agenda (depende do motor de regra agenda-fiscal.js, não
-//     integrado ao banco ainda)
 //   - panorama fiscal (SITFIS) — sem tabela própria no schema
-//   - "Entenda seu imposto" com múltiplos anexos — apuracoes_simples
-//     grava um anexo por linha, o parser novo devolve uma lista
 // ============================================================
 
 import { supabase } from "./supabase";
@@ -64,7 +61,7 @@ export async function carregarGuiasDaEmpresa(empresaId) {
   const [{ data: apuracoes }, { data: parcelas }] = await Promise.all([
     supabase
       .from("apuracoes_simples")
-      .select("*, apuracao_tributos(*), apuracao_historico_receita(*)")
+      .select("*, apuracao_tributos(*), apuracao_historico_receita(*), apuracao_anexos(*, apuracao_tributos(*))")
       .in("guia_id", ids)
       .eq("publicada", true),
     supabase
@@ -105,31 +102,72 @@ export async function carregarGuiasDaEmpresa(empresaId) {
       pix: !!g.pix_copia_cola,
       pixPayload: g.pix_copia_cola,
       novo: !g.vista_em,
+      status: g.status,
+      pagaEm: g.paga_em,
     };
+
+    if (g.eh_parcelamento) {
+      item.ehParcelamento = true;
+      item.parcelamentoSigla = g.parcelamento_sigla;
+      item.parcelamentoNumero = g.parcelamento_numero;
+      item.parcelaAtual = g.parcela_atual;
+      item.parcelaTotal = g.parcela_total;
+      item.valorPrincipal = numero(g.valor_principal);
+      item.valorMulta = numero(g.valor_multa);
+      item.valorJuros = numero(g.valor_juros);
+    }
 
     const apuracao = apuracaoPorGuia[g.id];
     if (apuracao) {
-      item.entenda = {
-        anexo: apuracao.anexo,
-        rpa: numero(apuracao.rpa),
-        rbt12: numero(apuracao.rbt12),
-        faixaDe: numero(apuracao.faixa_de),
-        faixaAte: numero(apuracao.faixa_ate),
-        aliquotaNominal: numero(apuracao.aliquota_nominal),
-        aliquotaEfetiva: numero(apuracao.aliquota_efetiva),
-        tributos: (apuracao.apuracao_tributos || []).map((t) => ({
-          nome: t.nome, situacao: t.situacao,
-          aliquota: numero(t.aliquota), valor: numero(t.valor),
-          reducao: numero(t.percentual_reducao),
-        })),
-        historico: (apuracao.apuracao_historico_receita || [])
-          .slice()
-          .sort((a, b) => MESES_ORDEM(a.competencia).localeCompare(MESES_ORDEM(b.competencia)))
-          .map((h) => ({ comp: h.competencia, receita: numero(h.receita_interna) + numero(h.receita_exportacao) })),
-        proximo: apuracao.proxima_competencia
-          ? { comp: apuracao.proxima_competencia, aliquotaEfetiva: numero(apuracao.proxima_aliquota_efetiva) }
-          : null,
-      };
+      const historico = (apuracao.apuracao_historico_receita || [])
+        .slice()
+        .sort((a, b) => MESES_ORDEM(a.competencia).localeCompare(MESES_ORDEM(b.competencia)))
+        .map((h) => ({ comp: h.competencia, receita: numero(h.receita_interna) + numero(h.receita_exportacao) }));
+      const proximo = apuracao.proxima_competencia
+        ? { comp: apuracao.proxima_competencia, aliquotaEfetiva: numero(apuracao.proxima_aliquota_efetiva) }
+        : null;
+      const anexos = apuracao.apuracao_anexos || [];
+
+      if (anexos.length > 1) {
+        // empresa apurada em mais de um anexo na mesma competência
+        // (ex.: revende e industrializa) — ver sql/07-apuracao-anexos.sql
+        item.entenda = {
+          rpa: numero(apuracao.rpa),
+          rbt12: numero(apuracao.rbt12),
+          faixaDe: numero(apuracao.faixa_de),
+          faixaAte: numero(apuracao.faixa_ate),
+          anexos: anexos.map((a) => ({
+            nome: a.anexo,
+            receitaTributada: numero(a.receita_tributada),
+            aliquotaNominal: numero(a.aliquota_nominal),
+            aliquotaEfetiva: numero(a.aliquota_efetiva),
+            subtotal: numero(a.subtotal),
+            tributos: (a.apuracao_tributos || []).map((t) => ({
+              nome: t.nome, situacao: t.situacao,
+              aliquota: numero(t.aliquota), valor: numero(t.valor),
+              reducao: numero(t.percentual_reducao),
+            })),
+          })),
+          historico,
+        };
+      } else {
+        item.entenda = {
+          anexo: apuracao.anexo,
+          rpa: numero(apuracao.rpa),
+          rbt12: numero(apuracao.rbt12),
+          faixaDe: numero(apuracao.faixa_de),
+          faixaAte: numero(apuracao.faixa_ate),
+          aliquotaNominal: numero(apuracao.aliquota_nominal),
+          aliquotaEfetiva: numero(apuracao.aliquota_efetiva),
+          tributos: (apuracao.apuracao_tributos || []).map((t) => ({
+            nome: t.nome, situacao: t.situacao,
+            aliquota: numero(t.aliquota), valor: numero(t.valor),
+            reducao: numero(t.percentual_reducao),
+          })),
+          historico,
+          proximo,
+        };
+      }
     }
 
     const parcela = parcelaPorGuia[g.id];
@@ -177,6 +215,35 @@ export async function carregarLimiteSimples(empresaId) {
     limiteGeral: numero(data.limite_geral),
     mesesAteSublimite: data.meses_ate_sublimite,
   };
+}
+
+// Cliente declarando que pagou — diferente de registrarEvento() porque
+// aqui o erro IMPORTA: se falhar, a guia não pode sumir da lista sem
+// avisar. O trigger sync_guia_espelhos() (sql/09) é quem de fato marca
+// status='paga' em guias, com privilégio elevado — este insert só
+// registra a declaração (guia_eventos é append-only).
+export async function marcarGuiaComoPaga(guiaId, empresaCnpj, arquivo, dataPagamento) {
+  const { data: sessaoData } = await supabase.auth.getSession();
+  const usuarioId = sessaoData?.session?.user?.id;
+  if (!usuarioId) throw new Error("Sessão expirada — entre de novo.");
+
+  let comprovantePath = null;
+  if (arquivo) {
+    const ext = (arquivo.name.split(".").pop() || "pdf").toLowerCase();
+    comprovantePath = `comprovantes/${empresaCnpj}/${guiaId}.${ext}`;
+    const { error: erroUpload } = await supabase.storage
+      .from("guias")
+      .upload(comprovantePath, arquivo, { upsert: true, contentType: arquivo.type || "application/octet-stream" });
+    if (erroUpload) throw erroUpload;
+  }
+
+  const { error } = await supabase.from("guia_eventos").insert({
+    guia_id: guiaId,
+    tipo: "marcada_paga",
+    usuario_id: usuarioId,
+    meta: { dataPagamento, comComprovante: !!arquivo, comprovantePath },
+  });
+  if (error) throw error;
 }
 
 // Best-effort: quem chama não precisa aguardar nem tratar erro — perder um

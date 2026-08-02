@@ -364,7 +364,10 @@ def _gfd(txt: str, g: Guia) -> None:
         raiz = re.sub(r"\D", "", m2.group(1))
         g.cnpj = raiz if len(raiz) == 8 else raiz[:8]
         g.razao_social = m2.group(2).strip()
-        g.alertas.append("CNPJ é apenas a raiz (8 dígitos) — confirmar filial pela pasta de origem.")
+        # Não gera alerta aqui: quem decide se raiz+nome é confiança
+        # suficiente pra publicar direto é identificador_empresa.py,
+        # que tem o cadastro completo pra cruzar. Um alerta fixo aqui
+        # forçaria revisão mesmo quando a identificação está certa.
 
     m = re.search(r"(\d{2}/\d{4})\s+\d+\s+([\d.,]+)\s+[\d.,]+\s+[\d.,]+\s+[\d.,]+\s+([\d.,]+)", txt)
     if m:
