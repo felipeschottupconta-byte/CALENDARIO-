@@ -597,6 +597,8 @@ function AreaUploadExtrato({ empresas, guias, avisar, aoTerminar }) {
           if (erroHist) console.error("Falha ao gravar histórico de receita:", erroHist.message);
         }
 
+        const errosSecundarios = [];
+
         if (dados.multiplos_anexos) {
           for (const a of dados.anexos) {
             const { data: anexoInserido, error: erroAnexo } = await supabase.from("apuracao_anexos").insert({
@@ -605,7 +607,11 @@ function AreaUploadExtrato({ empresas, guias, avisar, aoTerminar }) {
               parcela_deduzir: a.parcela_deduzir, percentual_reducao_icms: a.percentual_reducao_icms,
               subtotal: a.subtotal,
             }).select("id").single();
-            if (erroAnexo) { console.error("Falha ao gravar anexo:", erroAnexo.message); continue; }
+            if (erroAnexo) {
+              console.error("Falha ao gravar anexo:", erroAnexo.message);
+              errosSecundarios.push(`anexo ${a.anexo}: ${erroAnexo.message}`);
+              continue;
+            }
             if (a.tributos?.length) {
               const { error: erroTrib } = await supabase.from("apuracao_tributos").insert(
                 a.tributos.map((t) => ({
@@ -614,7 +620,10 @@ function AreaUploadExtrato({ empresas, guias, avisar, aoTerminar }) {
                   percentual_reducao: a.percentual_reducao_icms, valor: t.valor,
                 }))
               );
-              if (erroTrib) console.error("Falha ao gravar tributos do anexo:", erroTrib.message);
+              if (erroTrib) {
+                console.error("Falha ao gravar tributos do anexo:", erroTrib.message);
+                errosSecundarios.push(`tributos de ${a.anexo}: ${erroTrib.message}`);
+              }
             }
           }
         } else if (anexoUnico?.tributos?.length) {
@@ -625,7 +634,16 @@ function AreaUploadExtrato({ empresas, guias, avisar, aoTerminar }) {
               percentual_reducao: anexoUnico.percentual_reducao_icms, valor: t.valor,
             }))
           );
-          if (erroTrib) console.error("Falha ao gravar tributos:", erroTrib.message);
+          if (erroTrib) {
+            console.error("Falha ao gravar tributos:", erroTrib.message);
+            errosSecundarios.push(`tributos: ${erroTrib.message}`);
+          }
+        }
+
+        if (errosSecundarios.length) {
+          revisao++;
+          atualizar({ situacao: "revisao", detalhe: "gravado incompleto — " + errosSecundarios.join(" · ") });
+          continue;
         }
 
         gravadas++;
