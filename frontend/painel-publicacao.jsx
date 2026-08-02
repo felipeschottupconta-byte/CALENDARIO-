@@ -337,6 +337,11 @@ function AreaUpload({ empresas, avisar, aoTerminar }) {
       try {
         const form = new FormData();
         form.append("arquivo", arquivo);
+        // a identificação da empresa roda no servidor (parsers/identificador_empresa.py),
+        // cruzando CNPJ completo, raiz do CNPJ e nome — não só um .find() por CNPJ exato
+        form.append("empresas", JSON.stringify(empresas.map((e) => ({
+          id: e.id, cnpj: e.cnpj, razao_social: e.razao_social, nome_fantasia: e.nome_fantasia,
+        }))));
         const resp = await fetch("/api/parse-guia", { method: "POST", body: form });
         const dados = await resp.json();
 
@@ -354,20 +359,23 @@ function AreaUpload({ empresas, avisar, aoTerminar }) {
           continue;
         }
 
-        // empresa vem sempre do CNPJ extraído do PDF — nunca do nome do arquivo
-        let empresa = null;
-        if (dados.cnpj) {
-          empresa = empresas.find((e) => e.cnpj === dados.cnpj) || null;
-        }
+        const ident = dados.identificacao || {};
+        const empresa = ident.empresa_id ? empresas.find((e) => e.id === ident.empresa_id) : null;
 
         if (!empresa) {
           revisao++;
-          atualizar({ situacao: "revisao", detalhe: "CNPJ não cadastrado no sistema — cadastre a empresa e suba de novo" });
+          const motivo = ident.candidatos && ident.candidatos.length > 1
+            ? "empresa ambígua — mais de uma corresponde, selecionar manualmente"
+            : (ident.motivos || []).join(" · ") || "CNPJ não cadastrado no sistema — cadastre a empresa e suba de novo";
+          atualizar({ situacao: "revisao", detalhe: motivo });
           continue;
         }
 
-        const alertas = dados.alertas || [];
-        const status = alertas.length > 0 ? "revisao" : (dados.publicavel ? "processando" : "revisao");
+        // vai pra revisão se: o parser sinalizou algo, a identificação não
+        // teve certeza suficiente (raiz sem nome, nome sozinho, pasta
+        // divergente...), ou faltou algum campo obrigatório pro cliente ver.
+        const alertas = [...(dados.alertas || []), ...(ident.exige_revisao ? ident.motivos : [])];
+        const status = (alertas.length > 0 || !dados.publicavel) ? "revisao" : "processando";
         if (status === "revisao") revisao++; else classificadas++;
 
         const ano = dados.vencimento ? dados.vencimento.slice(0, 4) : new Date().getFullYear();
@@ -582,12 +590,41 @@ function CardGuia({ g, sel, onSel, onAbrir }) {
 }
 
 /* ---------- detalhe ---------- */
-function Detalhe({ g, onFechar, avisar }) {
+function Detalhe({ g, onFechar, avisar, perfil, aoAtualizar }) {
   const [ed, setEd] = useState({
-    competencia: g.competencia || "", vencimento: g.vencimento || "",
-    valor: g.valor ?? "", cnpj: g.cnpj || "",
+    competencia: g.competencia || "", vencimento: g.vencimento || "", valor: g.valor ?? "",
   });
+  const [salvando, setSalvando] = useState(false);
   const revisao = g.estado === "revisao";
+
+  const salvarELiberar = async () => {
+    setSalvando(true);
+    const valorNum = typeof ed.valor === "string" ? parseFloat(ed.valor.replace(",", ".")) : ed.valor;
+    const { error } = await supabase.from("guias").update({
+      competencia: ed.competencia || null,
+      vencimento: ed.vencimento || null,
+      valor: Number.isNaN(valorNum) ? null : valorNum,
+      status: "processando",
+      revisado_por: perfil.id,
+      revisado_em: new Date().toISOString(),
+    }).eq("id", g.id);
+    setSalvando(false);
+    if (error) { avisar("Falha ao salvar: " + error.message); return; }
+    avisar("Correção salva — guia movida para prontas");
+    await aoAtualizar();
+    onFechar();
+  };
+
+  const publicarUma = async () => {
+    setSalvando(true);
+    const { error } = await supabase.from("guias").update({ status: "publicada" }).eq("id", g.id);
+    if (!error) await supabase.from("guia_eventos").insert({ guia_id: g.id, tipo: "publicada", usuario_id: perfil.id });
+    setSalvando(false);
+    if (error) { avisar("Falha ao publicar: " + error.message); return; }
+    avisar("Guia publicada — cliente notificado");
+    await aoAtualizar();
+    onFechar();
+  };
 
   return (
     <div className="modal" onClick={onFechar}>
@@ -610,10 +647,8 @@ function Detalhe({ g, onFechar, avisar }) {
               Corrija os campos abaixo ou envie o arquivo para OCR. Guia em revisão
               não aparece para o cliente.
             </p>
+            <p className="mono arquivo">CNPJ do documento: {cnpjFmt(g.cnpj)}</p>
             <div className="form">
-              <label><span>CNPJ</span>
-                <input value={ed.cnpj} onChange={(e) => setEd({ ...ed, cnpj: e.target.value })}
-                  placeholder="somente dígitos" /></label>
               <label><span>Competência</span>
                 <input value={ed.competencia} onChange={(e) => setEd({ ...ed, competencia: e.target.value })}
                   placeholder="MM/AAAA" /></label>
@@ -628,8 +663,8 @@ function Detalhe({ g, onFechar, avisar }) {
               <button className="btn-secundario" onClick={() => avisar("Arquivo enviado para OCR")}>
                 Enviar para OCR
               </button>
-              <button className="btn-primario" onClick={() => avisar("Correção salva — guia movida para prontas")}>
-                Salvar e liberar
+              <button className="btn-primario" disabled={salvando} onClick={salvarELiberar}>
+                {salvando ? "Salvando…" : "Salvar e liberar"}
               </button>
             </div>
             {g.duplicata && (
