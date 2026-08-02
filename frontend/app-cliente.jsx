@@ -1849,12 +1849,13 @@ article.guia{background:#fff;border:1px solid var(--linha);border-radius:14px;pa
 .alerta-tendencia p{font-size:12px;color:#8A6516;line-height:1.55}
 .historico{display:flex;flex-direction:column;gap:8px}
 .historico-grafico{display:flex;align-items:flex-end;gap:3px;height:70px;padding:0 2px}
-.historico-coluna{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:4px;height:100%;
+.historico-coluna{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:4px;height:100%;
   background:none;border:0;padding:0;font:inherit;cursor:pointer}
 .historico-barra{width:100%;background:var(--tinta);border-radius:3px 3px 0 0;min-height:3px}
 .historico-coluna.atual .historico-barra{background:var(--verde)}
 .historico-coluna.atual span{color:var(--verde);font-weight:600}
-.historico-coluna span{font-family:'Jost',sans-serif;font-size:8.5px;letter-spacing:.05em;color:var(--suave)}
+.historico-coluna span{font-family:'Jost',sans-serif;font-size:8.5px;letter-spacing:0;color:var(--suave);
+  max-width:100%;overflow:hidden;text-overflow:clip;white-space:nowrap}
 .historico-legenda{font-size:11.5px;color:var(--suave)}
 .historico-faixa{font-size:11.5px;color:var(--suave);padding-top:7px;border-top:1px dashed var(--linha)}
 button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--tinta);outline-offset:2px}
