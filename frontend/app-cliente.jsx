@@ -949,6 +949,7 @@ function CardGuia({ g, emp, avisar, marcarPaga }) {
   const [tribAberto, setTribAberto] = useState(null);
   const [abaAnexo, setAbaAnexo] = useState(null);
   const [histAberto, setHistAberto] = useState(false);
+  const [histSelecionado, setHistSelecionado] = useState(null);
   const [recalculo, setRecalculo] = useState(false);
   const [pagando, setPagando] = useState(false);
   const [arquivo, setArquivo] = useState(null);
@@ -1296,12 +1297,19 @@ function CardGuia({ g, emp, avisar, marcarPaga }) {
                 <div className="historico">
                   <div className="historico-grafico">
                     {e.historico.map((h, i) => (
-                      <div key={i} className="historico-coluna">
-                        <div className="historico-barra" style={{ height: `${(h.receita / maxHist) * 100}%` }} title={brl(h.receita)} />
-                        <span>{h.comp.slice(0, 2)}</span>
-                      </div>
+                      <button key={i} type="button"
+                        className={"historico-coluna" + (histSelecionado === i ? " atual" : "")}
+                        onClick={() => setHistSelecionado(histSelecionado === i ? null : i)}>
+                        <div className="historico-barra" style={{ height: `${(h.receita / maxHist) * 100}%` }} />
+                        <span>{MESES[+h.comp.slice(0, 2) - 1]}</span>
+                      </button>
                     ))}
                   </div>
+                  <p className="historico-legenda">
+                    {histSelecionado != null
+                      ? `${e.historico[histSelecionado].comp}: ${brl(e.historico[histSelecionado].receita)}`
+                      : "Toque numa barra pra ver o valor exato do mês"}
+                  </p>
                   <p className="historico-legenda">Acumulado de 12 meses: {brl(e.rbt12)}</p>
                   <p className="historico-faixa">Faixa de enquadramento: de {brl(e.faixaDe)} a {brl(e.faixaAte)}</p>
                 </div>
