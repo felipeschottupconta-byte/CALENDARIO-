@@ -1072,6 +1072,7 @@ function CardGuia({ g, emp, avisar, marcarPaga }) {
                           <div className="trib-linha1">
                             <span className="trib-nome">{t.nome}</span>
                             {t.situacao === "Redução" && <span className="chip-reducao">redução</span>}
+                            <span className="trib-pct">{largura.toFixed(1)}%</span>
                             <span className="trib-valor">{brl(t.valor)}</span>
                           </div>
                           <div className="trib-barra-fundo"><div className="trib-barra" style={{ width: `${largura}%` }} /></div>
@@ -1148,6 +1149,7 @@ function CardGuia({ g, emp, avisar, marcarPaga }) {
                           <div className="trib-linha1">
                             <span className="trib-nome">{t.nome}</span>
                             {t.situacao === "Redução" && <span className="chip-reducao">redução</span>}
+                            <span className="trib-pct">{largura.toFixed(1)}%</span>
                             <span className="trib-valor">{brl(t.valor)}</span>
                           </div>
                           <div className="trib-barra-fundo"><div className="trib-barra" style={{ width: `${largura}%` }} /></div>
@@ -1645,6 +1647,7 @@ article.guia{background:#fff;border:1px solid var(--linha);border-radius:14px;pa
 .trib-linha1{display:flex;align-items:center;gap:8px}
 .trib-nome{font-size:13px;font-weight:600;flex:1}
 .chip-reducao{font-size:9px;background:#EAF3ED;color:var(--verde);padding:2px 7px;border-radius:20px;font-weight:600;text-transform:lowercase}
+.trib-pct{font-size:11.5px;color:var(--suave);font-variant-numeric:tabular-nums;flex:none}
 .trib-valor{font-size:13px;font-weight:600;font-variant-numeric:tabular-nums}
 .trib-barra-fundo{height:4px;background:#E9E8E4;border-radius:3px;overflow:hidden}
 .trib-barra{height:100%;background:var(--tinta);border-radius:3px}
