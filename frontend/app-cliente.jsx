@@ -331,6 +331,24 @@ const descricaoAnexo = (nome) => {
 };
 const juntarLista = (arr) => arr.length <= 1 ? (arr[0] || "") : arr.slice(0, -1).join(", ") + " e " + arr[arr.length - 1];
 
+// As 6 faixas de RBT12 do Simples Nacional têm a mesma faixa em R$ nos
+// Anexos I a V — o que muda por anexo é a alíquota/parcela a deduzir
+// daquela faixa, não o intervalo em si. Por isso a posição na tabela
+// (1ª a 6ª) é uma só pra empresa inteira, mesmo quando ela apura em
+// mais de um anexo ao mesmo tempo.
+const FAIXAS_SIMPLES = [
+  { n: 1, de: 0 },
+  { n: 2, de: 180000.01 },
+  { n: 3, de: 360000.01 },
+  { n: 4, de: 720000.01 },
+  { n: 5, de: 1800000.01 },
+  { n: 6, de: 3600000.01 },
+];
+const faixaNumero = (faixaDe) => {
+  const f = FAIXAS_SIMPLES.find((f) => Math.abs(f.de - faixaDe) < 1);
+  return f ? f.n : null;
+};
+
 function Barras({ seed }) {
   const bars = []; let h = 11;
   for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) % 9973;
@@ -748,6 +766,7 @@ function CardLimiteSimples({ ls }) {
   const percentualSublimite = Math.min(100, (ls.rbt12Atual / ls.sublimiteIcmsIss) * 100);
   const estado = ultrapassou || percentualSublimite >= 90 ? "alerta" : percentualSublimite >= 70 ? "atencao" : "neutro";
   const marcadorPct = Math.min(100, (ls.faixaDe / ls.sublimiteIcmsIss) * 100);
+  const nFaixa = faixaNumero(ls.faixaDe);
 
   return (
     <section className={"panorama limite " + estado}>
@@ -764,7 +783,9 @@ function CardLimiteSimples({ ls }) {
         <div className="medidor-preenchido" style={{ width: percentualSublimite + "%" }} />
         <div className="limite-marcador" style={{ left: marcadorPct + "%" }} title="Início da faixa atual" />
       </div>
-      <p className="fino">{pct(percentualSublimite)} desse limite · faixa atual de {brl(ls.faixaDe)} a {brl(ls.faixaAte)}</p>
+      <p className="fino">
+        {pct(percentualSublimite)} desse limite · faixa atual{nFaixa ? `: ${nFaixa}ª faixa` : ""} (de {brl(ls.faixaDe)} a {brl(ls.faixaAte)})
+      </p>
 
       {ultrapassou && (
         <p className="pan-alerta alerta">
