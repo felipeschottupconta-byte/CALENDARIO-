@@ -1564,19 +1564,55 @@ function Empresa({ emp, onSair }) {
 // do modelo (ver invariante 1 no CLAUDE.md e o system prompt em api/chat.js).
 function contextoEmpresa(emp) {
   if (!emp) return null;
-  const entendaMaisRecente = [...(emp.guias || [])]
+  const guias = emp.guias || [];
+
+  // Apuração mais recente do Simples ("Entenda seu imposto"). Traz o detalhe
+  // por tributo, os anexos (multi-anexo) e o Fator R da competência atual.
+  const guiaEntenda = guias
     .filter((g) => g.entenda)
-    .sort((a, b) => String(b.comp).localeCompare(String(a.comp)))[0]?.entenda || null;
+    .sort((a, b) => String(b.comp).localeCompare(String(a.comp)))[0] || null;
+  const entenda = guiaEntenda ? { ...guiaEntenda.entenda } : null;
+  // O histórico de receita (12 meses) vive dentro do entenda; tiramos daqui
+  // pra mandar uma vez só no topo (só totais mensais, não item por item).
+  const historicoReceita = entenda?.historico || [];
+  const proximaApuracao = entenda?.proximo || null;
+  if (entenda) { delete entenda.historico; delete entenda.proximo; }
+
+  // Parcelamentos ativos — resumo, sem despejar todas as parcelas irmãs cruas.
+  const parcelamentos = guias
+    .filter((g) => g.parcelamento)
+    .map((g) => ({
+      guia: g.nome,
+      numeroProcesso: g.parcelamento.numeroProcesso,
+      parcelaAtual: g.parcelamento.parcelaAtual,
+      totalParcelas: g.parcelamento.totalParcelas,
+      parcelasPagas: (g.parcelamento.parcelas || []).filter((p) => p.paga).length,
+      valorParcela: g.parcelamento.valorParcela,
+      dataQuitacaoPrevista: g.parcelamento.dataQuitacaoPrevista,
+    }));
 
   return {
     empresa: { fantasia: emp.fantasia, razaoSocial: emp.razao, cnpj: emp.cnpj, regime: emp.regime },
-    guias: (emp.guias || []).map((g) => ({
-      descricao: g.nome, competencia: g.comp, vencimento: g.venc,
-      valor: g.valor, status: g.status,
+    competenciaReferencia: guiaEntenda?.comp || null,
+    // TODAS as guias (DAS, DARF, ISS, etc.), campos enxutos
+    guias: guias.map((g) => ({
+      tipo: g.tipo,
+      descricao: g.nome,
+      competencia: g.comp,
+      vencimento: g.venc,
+      valor: g.valor,
+      status: g.status,
+      pagaEm: g.pagaEm || null,
+      ehParcelamento: !!g.ehParcelamento,
     })),
-    entendaSeuImposto: entendaMaisRecente,
-    cargaTributaria: emp.cargaTributaria || null,
+    // Simples da competência atual: anexo(s), RPA, RBT12, faixa, alíquotas,
+    // Fator R, folha 12m e tributos. Multi-anexo vem em entenda.anexos[].
+    entendaSeuImposto: entenda,
+    proximaApuracao,                       // { comp, aliquotaEfetiva } se houver
+    historicoReceita,                      // [{comp, receita}] — 12 meses, total mensal
+    cargaTributaria: emp.cargaTributaria || null, // { serie:[{comp,cargaPercentual}], mediaPercentual, maior, menor }
     limiteSimples: emp.limiteSimples || null,
+    parcelamentos,                         // [] se não houver
   };
 }
 
