@@ -392,6 +392,7 @@ function Barras({ seed }) {
 // loga no portal pra testar.
 const CHAT_EMAILS_TESTE = [
   "felipeschottbraga@gmail.com",
+  "gataserrana@gmail.com",
 ];
 function podeVerChatIA(perfil) {
   const email = (perfil?.email || "").trim().toLowerCase();
