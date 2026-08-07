@@ -520,6 +520,7 @@ export default function App() {
                 {aba === "pedidos" && <Pedidos emp={emp} pedidos={pedidos} setPedidos={setPedidos} avisar={avisar} />}
                 {aba === "empresa" && <Empresa emp={emp} onSair={sair} />}
               </main>
+              <ChatIA emp={emp} />
               <Abas aba={aba} setAba={setAba} />
             </>
           )}
@@ -1543,6 +1544,116 @@ function Empresa({ emp, onSair }) {
   );
 }
 
+/* ===================== Chat de IA ===================== */
+
+// Monta o contexto que vai pro modelo. Só dados que o cliente já vê
+// na tela — e todos os NÚMEROS vêm dos parsers (via Supabase), nunca
+// do modelo (ver invariante 1 no CLAUDE.md e o system prompt em api/chat.js).
+function contextoEmpresa(emp) {
+  if (!emp) return null;
+  const entendaMaisRecente = [...(emp.guias || [])]
+    .filter((g) => g.entenda)
+    .sort((a, b) => String(b.comp).localeCompare(String(a.comp)))[0]?.entenda || null;
+
+  return {
+    empresa: { fantasia: emp.fantasia, razaoSocial: emp.razao, cnpj: emp.cnpj, regime: emp.regime },
+    guias: (emp.guias || []).map((g) => ({
+      descricao: g.nome, competencia: g.comp, vencimento: g.venc,
+      valor: g.valor, status: g.status,
+    })),
+    entendaSeuImposto: entendaMaisRecente,
+    cargaTributaria: emp.cargaTributaria || null,
+    limiteSimples: emp.limiteSimples || null,
+  };
+}
+
+function ChatIA({ emp }) {
+  const [aberto, setAberto] = useState(false);
+  const [mensagens, setMensagens] = useState([]);
+  const [texto, setTexto] = useState("");
+  const [pensando, setPensando] = useState(false);
+  const fimRef = React.useRef(null);
+
+  React.useEffect(() => {
+    fimRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [mensagens, pensando]);
+
+  const enviar = async () => {
+    const pergunta = texto.trim();
+    if (!pergunta || pensando) return;
+    const novas = [...mensagens, { role: "user", content: pergunta }];
+    setMensagens(novas);
+    setTexto("");
+    setPensando(true);
+    try {
+      const r = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mensagens: novas, contexto: contextoEmpresa(emp) }),
+      });
+      const dado = await r.json();
+      const resposta = dado.resposta || dado.erro || "Não consegui responder agora.";
+      setMensagens((m) => [...m, { role: "assistant", content: resposta }]);
+    } catch {
+      setMensagens((m) => [...m, { role: "assistant", content: "Sem conexão com a IA agora. Tente de novo em instantes." }]);
+    } finally {
+      setPensando(false);
+    }
+  };
+
+  const sugestoes = ["Qual é a minha alíquota?", "Por que essa alíquota?", "Como está meu Simples este mês?"];
+
+  return (
+    <>
+      {!aberto && (
+        <button className="ia-fab" onClick={() => setAberto(true)} aria-label="Abrir assistente de IA">
+          <span className="ia-fab-ic">✦</span>
+          <span>Tire uma dúvida</span>
+        </button>
+      )}
+      {aberto && (
+        <div className="ia-painel">
+          <header className="ia-topo">
+            <div>
+              <p className="etiqueta">assistente</p>
+              <h3>Dúvidas sobre seus impostos</h3>
+            </div>
+            <button className="ia-fechar" onClick={() => setAberto(false)} aria-label="Fechar">✕</button>
+          </header>
+          <div className="ia-corpo">
+            {mensagens.length === 0 && (
+              <div className="ia-boas-vindas">
+                <p>Pergunte sobre sua alíquota, o extrato do Simples ou qualquer guia. Eu respondo com base nos seus dados.</p>
+                <div className="ia-sugestoes">
+                  {sugestoes.map((s) => (
+                    <button key={s} onClick={() => setTexto(s)}>{s}</button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {mensagens.map((m, i) => (
+              <div key={i} className={"ia-bolha " + m.role}>{m.content}</div>
+            ))}
+            {pensando && <div className="ia-bolha assistant ia-pensando"><span></span><span></span><span></span></div>}
+            <div ref={fimRef} />
+          </div>
+          <div className="ia-entrada">
+            <textarea
+              value={texto}
+              placeholder="Escreva sua pergunta…"
+              rows={1}
+              onChange={(e) => setTexto(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); enviar(); } }}
+            />
+            <button className="ia-enviar" onClick={enviar} disabled={!texto.trim() || pensando} aria-label="Enviar">↑</button>
+          </div>
+          <p className="ia-aviso">Respostas geradas por IA a partir dos seus dados. Confirme com o escritório antes de decisões.</p>
+        </div>
+      )}
+    </>
+  );
+}
+
 function Abas({ aba, setAba }) {
   const itens = [["inicio", "Início", "⌂"], ["guias", "Guias", "▤"], ["agenda", "Agenda", "▦"],
     ["pedidos", "Pedidos", "✎"], ["empresa", "Empresa", "◈"]];
@@ -1863,4 +1974,34 @@ article.guia{background:#fff;border:1px solid var(--linha);border-radius:14px;pa
 .historico-faixa{font-size:11.5px;color:var(--suave);padding-top:7px;border-top:1px dashed var(--linha)}
 button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--tinta);outline-offset:2px}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+/* ===================== Chat de IA ===================== */
+.ia-fab{position:absolute;right:14px;bottom:78px;z-index:20;display:flex;align-items:center;gap:8px;
+  background:var(--tinta);color:#fff;border:0;border-radius:22px;padding:11px 16px;font:inherit;font-weight:600;
+  font-size:13.5px;cursor:pointer;box-shadow:0 8px 24px rgba(0,0,0,.28)}
+.ia-fab-ic{color:var(--ambar);font-size:15px;line-height:1}
+.ia-painel{position:absolute;inset:0;z-index:40;background:var(--papel);display:flex;flex-direction:column}
+.ia-topo{background:#000;color:#F2F2F0;padding:16px 18px;display:flex;align-items:flex-start;justify-content:space-between}
+.ia-topo .etiqueta{color:var(--ambar);margin-bottom:3px}
+.ia-topo h3{font-size:18px;font-weight:700}
+.ia-fechar{background:none;border:0;color:#B5B5B0;font-size:18px;cursor:pointer;padding:2px 4px;line-height:1}
+.ia-corpo{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:10px}
+.ia-boas-vindas{color:var(--suave);font-size:13.5px;line-height:1.6;display:flex;flex-direction:column;gap:14px;padding:8px 2px}
+.ia-sugestoes{display:flex;flex-direction:column;gap:8px;align-items:flex-start}
+.ia-sugestoes button{background:#fff;border:1px solid var(--linha);border-radius:14px;padding:9px 14px;
+  font:inherit;font-size:13px;color:var(--tinta);cursor:pointer;text-align:left}
+.ia-bolha{max-width:84%;padding:11px 14px;border-radius:16px;font-size:14px;line-height:1.5;white-space:pre-wrap;word-break:break-word}
+.ia-bolha.user{align-self:flex-end;background:var(--tinta);color:#fff;border-bottom-right-radius:5px}
+.ia-bolha.assistant{align-self:flex-start;background:#fff;border:1px solid var(--linha);color:var(--tinta);border-bottom-left-radius:5px}
+.ia-pensando{display:flex;gap:5px;align-items:center}
+.ia-pensando span{width:6px;height:6px;border-radius:50%;background:var(--suave);animation:ia-bounce 1.2s infinite ease-in-out}
+.ia-pensando span:nth-child(2){animation-delay:.2s}.ia-pensando span:nth-child(3){animation-delay:.4s}
+@keyframes ia-bounce{0%,60%,100%{opacity:.3;transform:translateY(0)}30%{opacity:1;transform:translateY(-3px)}}
+.ia-entrada{display:flex;gap:8px;align-items:flex-end;padding:10px 12px;border-top:1px solid var(--linha);background:var(--papel)}
+.ia-entrada textarea{flex:1;background:#fff;border:1px solid var(--linha);border-radius:16px;padding:11px 14px;
+  font:inherit;font-size:15px;color:var(--tinta);resize:none;max-height:120px;line-height:1.4}
+.ia-enviar{flex:none;width:40px;height:40px;border-radius:50%;background:var(--tinta);color:#fff;border:0;
+  font-size:18px;cursor:pointer}
+.ia-enviar:disabled{opacity:.3}
+.ia-aviso{font-size:10.5px;color:var(--suave);text-align:center;padding:0 16px 10px;line-height:1.4}
 `;
