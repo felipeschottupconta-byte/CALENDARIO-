@@ -386,6 +386,18 @@ function Barras({ seed }) {
 }
 
 /* ============================ APP ============================ */
+// FASE DE TESTE: o chat de IA só aparece pros e-mails abaixo — os ~110
+// clientes reais não veem. Pra liberar geral depois, troque podeVerChatIA
+// por `() => true` (ou apague o gate). Adicione aqui o e-mail com que você
+// loga no portal pra testar.
+const CHAT_EMAILS_TESTE = [
+  "felipeschottbraga@gmail.com",
+];
+function podeVerChatIA(perfil) {
+  const email = (perfil?.email || "").trim().toLowerCase();
+  return !!email && CHAT_EMAILS_TESTE.map((e) => e.toLowerCase()).includes(email);
+}
+
 export default function App() {
   const { carregando, sessao, perfil, semAcesso, entrar, sair } = useAuth();
   const [empresas, setEmpresas] = useState({});
@@ -520,7 +532,7 @@ export default function App() {
                 {aba === "pedidos" && <Pedidos emp={emp} pedidos={pedidos} setPedidos={setPedidos} avisar={avisar} />}
                 {aba === "empresa" && <Empresa emp={emp} onSair={sair} />}
               </main>
-              <ChatIA emp={emp} />
+              {podeVerChatIA(perfil) && <ChatIA emp={emp} />}
               <Abas aba={aba} setAba={setAba} />
             </>
           )}
